@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
-
   private transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: 587,
@@ -14,9 +14,12 @@ export class MailService {
     },
   });
 
-  async sendVerification(email: string, token: string) {
+  constructor(private readonly configService: ConfigService) {}
 
-    const url = `http://localhost:4200/verify-email?token=${token}`;
+  async sendVerification(email: string, token: string) {
+    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+
+    const url = `${frontendUrl}/verify-email?token=${token}`;
 
     const message = {
       from: '"ARC Assessment" <kolaajala@gmail.com>',
@@ -30,18 +33,12 @@ export class MailService {
     };
 
     try {
-
       await this.transporter.sendMail(message);
 
-     // console.log('Verification email sent to:', email);
-
+      // console.log('Verification email sent to:', email);
     } catch (err) {
-
       console.log('Email server not available. Running in DEV mode.');
       console.log('Verification link:', url);
-
     }
-
   }
-
 }

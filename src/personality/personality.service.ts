@@ -70,7 +70,11 @@ export class PersonalityService {
      ACCESS GATE
   ------------------------------------------*/
 
-  async canAccessStage2(testSessionId: string) {
+  async canAccessStage2(
+    testSessionId: string,
+    requesterId: number,
+    requesterRole: string,
+  ) {
     const session = await this.testSessionRepo.findOne({
       where: { id: testSessionId },
     });
@@ -82,38 +86,67 @@ export class PersonalityService {
       };
     }
 
+    if (requesterRole !== 'ADMIN' && session.userId !== requesterId) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
+
     if (!session.stage1CompletedAt) {
       return {
         allowed: false,
         reason: 'STAGE1_NOT_COMPLETED',
       };
     }
+
     if (!session.userId) {
       return {
         allowed: false,
         reason: 'SESSION_HAS_NO_USER',
       };
     }
-    const user = await this.userRepo.findOne({
+
+    const owner = await this.userRepo.findOne({
       where: { id: session.userId },
     });
 
-    if (!user?.accessGranted) {
+    if (!owner) {
+      return {
+        allowed: false,
+        reason: 'USER_NOT_FOUND',
+      };
+    }
+
+    if (!owner.accountEnabled) {
+      return {
+        allowed: false,
+        reason: 'ACCOUNT_DISABLED',
+      };
+    }
+
+    if (!owner.emailVerified) {
+      return {
+        allowed: false,
+        reason: 'EMAIL_NOT_VERIFIED',
+      };
+    }
+
+    if (requesterRole !== 'ADMIN' && !owner.stage2AccessGranted) {
       return {
         allowed: false,
         reason: 'AUTH_REQUIRED',
       };
     }
 
-    return {
-      allowed: true,
-    };
+    return { allowed: true };
   }
 
   /* -----------------------------------------
      START PERSONALITY
   ------------------------------------------*/
-  async startPersonality(testSessionId: string) {
+  async startPersonality(
+    testSessionId: string,
+    requesterId: number,
+    requesterRole: string,
+  ) {
     const session = await this.testSessionRepo.findOne({
       where: { id: testSessionId },
     });
@@ -122,8 +155,12 @@ export class PersonalityService {
     if (!session.stage1CompletedAt)
       throw new UnauthorizedException('STAGE1_NOT_COMPLETED');
 
-    const access = await this.canAccessStage2(testSessionId);
-    
+    const access = await this.canAccessStage2(
+      testSessionId,
+      requesterId,
+      requesterRole,
+    );
+
     if (!access.allowed) throw new UnauthorizedException(access.reason);
 
     const rows: EnergyCenterRow[] = await this.testSessionRepo.manager.query(
@@ -184,7 +221,23 @@ export class PersonalityService {
   /* -----------------------------------------
      GET NEXT QUESTION
   ------------------------------------------*/
-  async getNextQuestion(testSessionId: string, energyCenter: EnergyCenter) {
+  async getNextQuestion(
+    testSessionId: string,
+    energyCenter: EnergyCenter,
+    requesterId: number,
+    requesterRole: string,
+  ) {
+    // Validate session ownership and Stage 2 access first.
+    const access = await this.canAccessStage2(
+      testSessionId,
+      requesterId,
+      requesterRole,
+    );
+
+    if (!access.allowed) {
+      throw new ForbiddenException(access.reason);
+    }
+
     const ps = await this.getOrCreatePersonalitySession(
       testSessionId,
       energyCenter,
@@ -230,7 +283,19 @@ export class PersonalityService {
     energyCenter: EnergyCenter,
     questionId: number,
     rankChoiceId: number,
+    requesterId: number,
+    requesterRole: string,
   ) {
+    const access = await this.canAccessStage2(
+      testSessionId,
+      requesterId,
+      requesterRole,
+    );
+
+    if (!access.allowed) {
+      throw new ForbiddenException(access.reason);
+    }
+
     const ps = await this.getOrCreatePersonalitySession(
       testSessionId,
       energyCenter,
@@ -331,7 +396,20 @@ export class PersonalityService {
   /* -----------------------------------------
      NEXT ENERGY CENTER
   ------------------------------------------*/
-  async getNextEnergyCenter(testSessionId: string) {
+  async getNextEnergyCenter(
+    testSessionId: string,
+    requesterId: number,
+    requesterRole: string,
+  ) {
+      const access = await this.canAccessStage2(
+        testSessionId,
+        requesterId,
+        requesterRole,
+      );
+
+      if (!access.allowed) {
+        throw new ForbiddenException(access.reason);
+      }
     const rows: EnergyCenterRow[] = await this.testSessionRepo.manager.query(
       `
         SELECT energy_center
@@ -363,7 +441,19 @@ export class PersonalityService {
   /* -----------------------------------------
      FINAL RESULT - legacy debug admin/test only endpoint - can be removed later
   ------------------------------------------*/
-  async aggregateFinalPersonality(testSessionId: string) {
+  async aggregateFinalPersonality(testSessionId: string,
+    requesterId: number,
+    requesterRole: string
+  ) {
+    const access = await this.canAccessStage2(
+      testSessionId,
+      requesterId,
+      requesterRole,
+    );
+
+    if (!access.allowed) {
+      throw new ForbiddenException(access.reason);
+    }
     const sessions = await this.personalitySessionRepo.find({
       where: {
         testSessionId,

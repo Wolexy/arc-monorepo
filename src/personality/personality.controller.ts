@@ -11,7 +11,7 @@ import {
 import { PersonalityService } from './personality.service';
 import { JwtAuthGuard, AccessGuard } from '../auth/jwt-auth.guard';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
-import type { Request } from 'express';
+//import type { Request } from 'express';
 import type { AuthRequest } from 'src/auth/interface/auth-request.interface';
 
 @Controller('personality')
@@ -23,33 +23,39 @@ export class PersonalityController {
   ) {}
 
   @Get('access/:sessionId')
-  checkAccess(@Param('sessionId') sessionId: string) {
-   // console.log('ACCESS ENDPOINT HIT');
-    return this.personalityService.canAccessStage2(sessionId);
+  checkAccess(@Param('sessionId') sessionId: string, @Req() req: AuthRequest) {
+    return this.personalityService.canAccessStage2(
+      sessionId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @UseGuards(AccessGuard)
   @Post('start/:sessionId')
-  start(
-    @Param('sessionId') sessionId: string,
-    // @Req() _req: Request & { user: JwtUser },
-  ) {
-    return this.personalityService.startPersonality(sessionId);
+  start(@Param('sessionId') sessionId: string, @Req() req: AuthRequest) {
+    return this.personalityService.startPersonality(
+      sessionId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
-  // @Get(':sessionId/status')
-  // async status(@Param('sessionId') sessionId: string) {
-  //   return this.personalityService.getStatus(sessionId);
-  // }
   @UseGuards(AccessGuard)
   @Get(':sessionId/:energyCenter/next')
   getNextQuestion(
     @Param('sessionId') sessionId: string,
     @Param('energyCenter') energyCenter: string,
+    @Req() req: AuthRequest,
   ) {
     const center = energyCenter.toUpperCase() as 'GUT' | 'HEART' | 'HEAD';
 
-    return this.personalityService.getNextQuestion(sessionId, center);
+    return this.personalityService.getNextQuestion(
+      sessionId,
+      center,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @UseGuards(AccessGuard)
@@ -58,6 +64,7 @@ export class PersonalityController {
     @Param('sessionId') sessionId: string,
     @Param('energyCenter') energyCenter: string,
     @Body() body: SubmitAnswerDto,
+    @Req() req: AuthRequest,
   ) {
     const center = energyCenter.toUpperCase() as 'GUT' | 'HEART' | 'HEAD';
 
@@ -66,18 +73,34 @@ export class PersonalityController {
       center,
       body.questionId,
       body.rankChoiceId,
+      req.user.userId,
+      req.user.role,
     );
   }
   @UseGuards(AccessGuard)
   @Get('next-center/:sessionId')
-  async nextCenter(@Param('sessionId') sessionId: string) {
-    return this.personalityService.getNextEnergyCenter(sessionId);
+  async nextCenter(
+    @Param('sessionId') sessionId: string,
+    @Req() req: AuthRequest,
+  ) {
+    return this.personalityService.getNextEnergyCenter(
+      sessionId,
+      req.user.userId,
+      req.user.role,
+    );
   }
   //Legacy Debug Admin/Test only endpoint - can be removed later
   @UseGuards(AccessGuard)
-  @Get(':sessionId/final')
-  async getFinal(@Param('sessionId') sessionId: string) {
-    return this.personalityService.aggregateFinalPersonality(sessionId);
+  @Post(':sessionId/final')
+  async getFinal(
+    @Param('sessionId') sessionId: string,
+    @Req() req: AuthRequest,
+  ) {
+    return this.personalityService.aggregateFinalPersonality(
+      sessionId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @UseGuards(AccessGuard)

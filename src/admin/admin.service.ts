@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -13,20 +13,40 @@ export class AdminService {
 
   /* ---- grant free access ---- */
   async grantAccess(userId: number, adminId: number) {
-    await this.userRepo.update(userId, {
-      accessGranted: true,
-      accessGrantedAt: new Date(),
-      accessGrantedBy: adminId,
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
     });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.stage2AccessGranted = true;
+    user.accessGranted = true;
+    user.accessGrantedAt = new Date();
+    user.accessGrantedBy = adminId;
+
+    await this.userRepo.save(user);
 
     return { success: true };
   }
 
-  /* ---- revoke access ---- */
+  // /* ---- revoke access ---- */
   async revokeAccess(userId: number) {
-    await this.userRepo.update(userId, {
-      accessGranted: false,
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
     });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.stage2AccessGranted = false;
+    user.accessGranted = false;
+    user.accessGrantedAt = null;
+    user.accessGrantedBy = null;
+
+    await this.userRepo.save(user);
 
     return { success: true };
   }
@@ -39,6 +59,8 @@ export class AdminService {
         email: true,
         role: true,
         accessGranted: true,
+        accountEnabled: true,
+        stage2AccessGranted: true,
         accessGrantedAt: true,
         accessGrantedBy: true,
         createdAt: true,

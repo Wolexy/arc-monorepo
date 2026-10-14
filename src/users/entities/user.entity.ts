@@ -23,11 +23,25 @@ export class User {
   @Column({ name: 'access_granted', default: false })
   accessGranted!: boolean;
 
+  @Column({
+    name: 'account_enabled',
+    type: 'boolean',
+    default: true,
+  })
+  accountEnabled!: boolean;
+
+  @Column({
+    name: 'stage2_access_granted',
+    type: 'boolean',
+    default: false,
+  })
+  stage2AccessGranted!: boolean;
+
   @Column({ name: 'access_granted_at', type: 'timestamptz', nullable: true })
-  accessGrantedAt!: Date;
+  accessGrantedAt!: Date |null;
 
   @Column({ name: 'access_granted_by', nullable: true })
-  accessGrantedBy!: number;
+  accessGrantedBy!: number |null;
 
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt!: Date | null;

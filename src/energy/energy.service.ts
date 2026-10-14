@@ -80,7 +80,7 @@ export class EnergyService implements OnModuleInit {
     return session;
   }
 
-  //==========================================================
+  //==========================GetNextGroup==========================
 
   async getNextGroup(sessionId: string, userId: number) {
     await this.validateSessionOwnership(sessionId, userId);
@@ -178,7 +178,7 @@ export class EnergyService implements OnModuleInit {
     await this.rankingRepo.save(records);
 
     return { success: true };
-  }
+  } //End getNextGroup
 
   ///////////////////////////////////////@ts-check
 
@@ -187,6 +187,13 @@ export class EnergyService implements OnModuleInit {
      1️⃣ Ensure all groups completed
   ------------------------------------------ */
     await this.validateSessionOwnership(sessionId, userId);
+
+    // Return the existing result if Stage 1 has already been completed.
+    const existingResult = await this.getStage1Result(sessionId, userId);
+
+    if (existingResult) {
+      return existingResult;
+    }
 
     const totalGroups = await this.groupRepo.count({
       where: {
@@ -208,7 +215,7 @@ export class EnergyService implements OnModuleInit {
     const rows = await this.statementRepo
       .createQueryBuilder('s')
       .innerJoin('energy_statement_rankings', 'r', 'r.statement_id = s.id')
-      .innerJoin('rank_choices', 'rc', 'rc.id = r.rank_id')
+      .innerJoin('energy_rank_choices', 'rc', 'rc.id = r.rank_id')
       .innerJoin('energy_group_responses', 'gr', 'gr.id = r.group_response_id')
       .where('gr.session_id = :sessionId', { sessionId })
       .select([
@@ -313,12 +320,45 @@ export class EnergyService implements OnModuleInit {
       dominant,
       eligibleCenters,
     };
-  }
+  } // End finishStage1
+
+  // -------------Retrieve Stage 1 result-------------------
+
+  async getStage1Result(sessionId: string, userId: number) {
+    // 1. Validate that the session belongs to the requesting user.
+    await this.validateSessionOwnership(sessionId, userId);
+
+    // 2. Retrieve the saved Energy Assessment result.
+    const result = await this.energyResultRepo.findOne({
+      where: { sessionId },
+    });
+
+    // No saved result exists yet.
+    if (!result) {
+      return null;
+    }
+
+    // 3. Retrieve the eligible energy centers.
+    const eligibleRecords = await this.energyEligibleRepo.find({
+      where: { sessionId },
+      order: { id: 'ASC' },
+    });
+
+    // 4. Return the saved result without recalculating scores.
+    return {
+      gut: result.gutScore,
+      heart: result.heartScore,
+      head: result.headScore,
+      dominant: result.dominantCenter,
+      eligibleCenters: eligibleRecords.map((record) => record.energyCenter),
+    };
+  } //getStage1Result
+
   /*-----------------Unlocked Stage 2 --------------------------
   unlock Stage 2 by setting stage2UnlockedAt timestamp. 
 This allows frontend to know when to allow access to Stage 2, 
 without needing to check energy results or eligible centers separately. 
-*/
+*****************************************************************/
   async unlockStage2(sessionId: string, userId: number) {
     const session: TestSession | null = await this.validateSessionOwnership(
       sessionId,
@@ -354,5 +394,5 @@ without needing to check energy results or eligible centers separately.
       unlocked: true,
       stage2UnlockedAt: session.stage2UnlockedAt,
     };
-  }
+  } // End unlockStage2
 }

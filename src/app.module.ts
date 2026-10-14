@@ -22,7 +22,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 10,
+        limit: process.env.NODE_ENV === 'production' ? 10 : 100,
       },
     ]),
     TypeOrmModule.forRootAsync({
