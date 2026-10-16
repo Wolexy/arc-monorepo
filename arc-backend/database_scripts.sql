@@ -484,7 +484,8 @@ ALTER TABLE IF EXISTS public.test_sessions
     REFERENCES public.users (id) MATCH SIMPLE
     ON UPDATE NO ACTION
     ON DELETE NO ACTION;
-CREATE INDEX IF NOT EXISTS one_test_per_user
-    ON public.test_sessions(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS one_test_per_user
+    ON public.test_sessions (user_id)
+    WHERE user_id IS NOT NULL;
 
 END;
