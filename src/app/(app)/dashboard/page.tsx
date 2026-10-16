@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getCurrentUser, logout, type CurrentUser } from "@/lib/api/auth";
+
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -19,7 +20,7 @@ export default function DashboardPage() {
     const [stage1Completed, setStage1Completed] = useState(false);
     const [isCheckingProgress, setIsCheckingProgress] = useState(false);
 
-
+    
     useEffect(() => {
         async function loadUser() {
             try {
@@ -37,7 +38,8 @@ export default function DashboardPage() {
 
     // Load the user's Stage 1 assessment progress.
     useEffect(() => {
-        if (!user || (user.role !== "ADMIN" && !user.accessGranted)) {
+        // Stage 1 needs a verified, enabled account only (no Stage 2 grant).
+        if (!user || !user.emailVerified || !user.accountEnabled) {
             return;
         }
 
@@ -84,7 +86,7 @@ export default function DashboardPage() {
             isMounted = false;
         };
     }, [user]);
-
+    
     if (isLoading) {
         return (
             <main className="flex min-h-screen items-center justify-center">
@@ -115,23 +117,36 @@ export default function DashboardPage() {
     if (!user) {
         return null;
     }
-    const canAccessAssessment =
-        user.role === "ADMIN" || user.accessGranted;
+    // Stage 1 is open to every verified, enabled account.
+    // Stage 2 is enforced separately by the backend.
+    const canAccessAssessment = user.emailVerified && user.accountEnabled;
+    const hasStage2Access = user.role === "ADMIN" || user.stage2AccessGranted;
 
     return (
         <main className="min-h-screen px-6 py-10">
             <div className="mx-auto max-w-4xl">
-                <header className="mb-10">
-                    <p className="text-sm text-gray-500">ARC Assessment</p>
+                <header className="mb-10 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                    <div>
+                        <p className="text-sm text-gray-500">ARC Assessment</p>
 
-                    <h1 className="mt-2 text-3xl font-bold">
-                        Welcome to ARC
-                    </h1>
+                        <h1 className="mt-2 text-3xl font-bold">
+                            Welcome to ARC
+                        </h1>
 
-                    <p className="mt-2 text-gray-600">
-                        {user.email}
-                    </p>
+                        <p className="mt-2 text-gray-600">
+                            {user.email}
+                        </p>
+                    </div>
 
+                    {/* Convenience link only: /admin endpoints are protected by the backend RoleGuard. */}
+                    {user.role === "ADMIN" && (
+                        <Link
+                            href="/admin"
+                            className="rounded-lg border px-4 py-2 text-center text-sm font-medium hover:bg-gray-50"
+                        >
+                            Admin Dashboard
+                        </Link>
+                    )}
                 </header>
 
                 <section className="space-y-6">
@@ -160,13 +175,13 @@ export default function DashboardPage() {
 
                             <div className="rounded-lg bg-gray-50 p-4">
                                 <p className="text-sm text-gray-500">
-                                    Assessment Access
+                                    Stage 2 Access
                                 </p>
 
                                 <p className="mt-1 font-medium">
-                                    {canAccessAssessment
+                                    {hasStage2Access
                                         ? "Granted"
-                                        : "Not yet granted"}
+                                        : "Not Granted"}
                                 </p>
                             </div>
 

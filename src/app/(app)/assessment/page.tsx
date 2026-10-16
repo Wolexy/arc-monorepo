@@ -2,48 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import {
     getCurrentUser,
     type CurrentUser,
 } from "@/lib/api/auth";
-
-import {
-    startAssessment,
-    getNextEnergyGroup,
-    submitEnergyGroup,
-    finishEnergyAssessment,
-    getSavedEnergyResult,
-    type EnergyGroup,
-    type EnergyAssessmentResult,
-} from "@/lib/api/assessment";
-
-const RANK_OPTIONS = [
-    { id: 3, label: "Most True", description: "Best describes me" },
-    { id: 2, label: "True", description: "Generally describes me" },
-    { id: 1, label: "Least True", description: "Least describes me" },
-];
-
-const CENTER_STYLES: Record<
-    string,
-    { label: string; color: string; background: string }
-> = {
-    GUT: {
-        label: "Gut",
-        color: "text-rose-700",
-        background: "bg-rose-100",
-    },
-    HEART: {
-        label: "Heart",
-        color: "text-pink-700",
-        background: "bg-pink-100",
-    },
-    HEAD: {
-        label: "Head",
-        color: "text-indigo-700",
-        background: "bg-indigo-100",
-    },
-};
 
 export default function AssessmentPage() {
     const router = useRouter();
@@ -51,18 +13,6 @@ export default function AssessmentPage() {
     const [user, setUser] = useState<CurrentUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
-
-    const [sessionId, setSessionId] = useState<string | null>(null);
-    const [group, setGroup] = useState<EnergyGroup | null>(null);
-
-    const [rankings, setRankings] = useState<Record<number, number>>({});
-    const [result, setResult] = useState<EnergyAssessmentResult | null>(null);
-
-    const [isStarting, setIsStarting] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isFinishing, setIsFinishing] = useState(false);
-
-    const [flowError, setFlowError] = useState("");
 
     // Load the authenticated user.
     useEffect(() => {
@@ -97,190 +47,69 @@ export default function AssessmentPage() {
         };
     }, []);
 
-    // Load the next group, or calculate the results when all groups are done.
-    async function loadNextGroup(currentSessionId: string) {
-        setFlowError('');
-
-        const next = await getNextEnergyGroup(currentSessionId);
-
-        if ('completed' in next && next.completed) {
-            setGroup(null);
-            setIsFinishing(true);
-
-            try {
-                // First, look for an existing saved result.
-                const savedResult =
-                    await getSavedEnergyResult(currentSessionId);
-
-                if (savedResult) {
-                    // Display the saved result without recalculating.
-                    setResult(savedResult);
-                } else {
-                    // Recovery: all groups are answered, but no result exists.
-                    const assessmentResult =
-                        await finishEnergyAssessment(currentSessionId);
-
-                    setResult(assessmentResult);
-                }
-            } finally {
-                setIsFinishing(false);
-            }
-
-            return;
-        }
-
-        setGroup(next as EnergyGroup);
-        setRankings({});
-    }
-
-    // Start a new assessment or resume an unfinished session.
-    async function handleStartAssessment() {
-        setIsStarting(true);
-        setFlowError("");
-
-        try {
-            const session = await startAssessment();
-
-            setSessionId(session.id);
-
-            await loadNextGroup(session.id);
-        } catch (error) {
-            setFlowError(
-                error instanceof Error
-                    ? error.message
-                    : "Unable to start your assessment. Please try again.",
-            );
-        } finally {
-            setIsStarting(false);
-        }
-    }
-
-    // A rank can only be assigned to one statement in each group.
-    function handleRank(statementId: number, rankId: number) {
-        setRankings((previous) => {
-            const updated = { ...previous };
-
-            // Remove the same rank from any other statement.
-            for (const key of Object.keys(updated)) {
-                if (updated[Number(key)] === rankId) {
-                    delete updated[Number(key)];
-                }
-            }
-
-            updated[statementId] = rankId;
-
-            return updated;
-        });
-    }
-
-    function isRankUsedByAnotherStatement(
-        statementId: number,
-        rankId: number,
-    ) {
-        return Object.entries(rankings).some(
-            ([id, assignedRank]) =>
-                Number(id) !== statementId && assignedRank === rankId,
-        );
-    }
-
-    // Submit the current group's rankings.
-    async function handleSubmitGroup() {
-        if (!sessionId || !group) return;
-
-        if (Object.keys(rankings).length !== group.statements.length) {
-            setFlowError("Please rank every statement before continuing.");
-            return;
-        }
-
-        const assignedRanks = Object.values(rankings);
-
-        if (new Set(assignedRanks).size !== assignedRanks.length) {
-            setFlowError("Each ranking must be used only once.");
-            return;
-        }
-
-        setIsSubmitting(true);
-        setFlowError("");
-
-        try {
-            await submitEnergyGroup({
-                sessionId,
-                energyStatementGroupId: group.groupId,
-                rankings: group.statements.map((statement) => ({
-                    statementId: statement.id,
-                    rankId: rankings[statement.id],
-                })),
-            });
-
-            await loadNextGroup(sessionId);
-        } catch (error) {
-            setFlowError(
-                error instanceof Error
-                    ? error.message
-                    : "Unable to submit your answers. Please try again.",
-            );
-        } finally {
-            setIsSubmitting(false);
-        }
-    }
-
     // Loading screen.
     if (isLoading) {
         return (
-            <main className="relative flex min-h-[70vh] items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4">
-                <div className="text-center">
-                    <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+            <main className="relative flex min-h-[75vh] items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-12">
+                <section className="w-full max-w-lg rounded-3xl border border-white bg-white/90 p-8 text-center shadow-xl shadow-indigo-200/40 backdrop-blur-xl">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-2xl text-indigo-700">
+                        ✦
+                    </div>
 
-                    <p className="mt-5 text-sm font-medium text-slate-600">
-                        Preparing your ARC experience...
+                    <h1 className="mt-5 text-2xl font-bold text-slate-900">
+                        Preparing Your ARC Experience
+                    </h1>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                        Please wait while we verify your account.
                     </p>
-                </div>
+                </section>
             </main>
         );
     }
 
-    // Account loading error.
-    if (loadError) {
+    // Account-loading error.
+    if (loadError || !user) {
         return (
-            <main className="flex min-h-[70vh] items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4">
-                <div className="max-w-md rounded-3xl border border-white bg-white/90 p-8 text-center shadow-xl">
+            <main className="flex min-h-[75vh] items-center justify-center px-4 py-12">
+                <section className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-lg">
                     <h1 className="text-2xl font-bold text-slate-900">
-                        Unable to Load Assessment
+                        Unable to Load Your Account
                     </h1>
 
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                        {loadError}
+                    <p
+                        role="alert"
+                        className="mt-4 text-sm leading-6 text-rose-600"
+                    >
+                        {loadError || "Please sign in to continue."}
                     </p>
 
                     <button
                         type="button"
                         onClick={() => router.push("/dashboard")}
-                        className="mt-6 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white transition hover:bg-indigo-700"
+                        className="mt-6 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:from-indigo-700 hover:to-violet-700"
                     >
                         Return to Dashboard
                     </button>
-                </div>
+                </section>
             </main>
         );
     }
 
-    if (!user) return null;
+    // Stage 1 is open to every verified, enabled account (no Stage 2 grant).
+    const canAccessAssessment =
+        user.emailVerified === true && user.accountEnabled === true;
 
-    const hasAccess =
-        user.role === "ADMIN" || user.accessGranted;
-
-    // Access restriction.
-    if (!hasAccess) {
+    // Access-restriction screen.
+    if (!canAccessAssessment) {
         return (
             <main className="relative flex min-h-[75vh] items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-12">
-                <DecorativeBackground />
-
-                <section className="relative w-full max-w-lg rounded-3xl border border-white bg-white/90 p-8 text-center shadow-2xl shadow-indigo-200/40 backdrop-blur-xl sm:p-10">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 text-3xl">
-                        🔐
+                <section className="w-full max-w-lg rounded-3xl border border-white bg-white/90 p-8 text-center shadow-xl shadow-indigo-200/40 backdrop-blur-xl">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-2xl text-amber-700">
+                        !
                     </div>
 
-                    <p className="mt-6 text-xs font-bold uppercase tracking-[0.25em] text-indigo-600">
+                    <p className="mt-5 text-sm font-semibold uppercase tracking-widest text-indigo-600">
                         ARC Personality Assessment
                     </p>
 
@@ -288,7 +117,7 @@ export default function AssessmentPage() {
                         Your next step starts here.
                     </h1>
 
-                    <p className="mx-auto mt-4 max-w-sm leading-7 text-slate-600">
+                    <p className="mt-4 text-sm leading-7 text-slate-600">
                         Your account does not currently have access to the
                         assessment. Please contact the administrator for
                         assistance.
@@ -297,7 +126,7 @@ export default function AssessmentPage() {
                     <button
                         type="button"
                         onClick={() => router.push("/dashboard")}
-                        className="mt-8 w-full rounded-xl bg-indigo-600 px-5 py-3.5 font-semibold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700"
+                        className="mt-7 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:from-indigo-700 hover:to-violet-700"
                     >
                         Return to Dashboard
                     </button>
@@ -306,556 +135,154 @@ export default function AssessmentPage() {
         );
     }
 
-    // Completed assessment results.
-    if (result) {
-        return (
-            <main className="relative min-h-[75vh] overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-12 sm:px-8">
-                <DecorativeBackground />
+    // ARC assessment introduction.
+    return (
+        <main className="relative min-h-[75vh] overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-12 sm:px-8">
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 overflow-hidden"
+            >
+                <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-indigo-200/30 blur-3xl" />
+                <div className="absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-violet-200/40 blur-3xl" />
+            </div>
 
-                <section className="relative mx-auto max-w-4xl">
-                    <div className="rounded-3xl border border-white bg-white/90 p-6 shadow-2xl shadow-indigo-200/40 backdrop-blur-xl sm:p-10">
-                        <div className="text-center">
-                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700">
-                                ✓
-                            </div>
+            <section className="relative mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+                <div>
+                    <p className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-indigo-700 shadow-sm">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Your journey begins here
+                    </p>
 
-                            <p className="mt-5 text-xs font-bold uppercase tracking-[0.25em] text-indigo-600">
-                                Stage One Complete
+                    <h1 className="mt-6 text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+                        Discover the way{" "}
+                        <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+                            you think,
+                        </span>{" "}
+                        feel, and act.
+                    </h1>
+
+                    <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 sm:text-lg">
+                        The ARC assessment begins with three Energy Centers:
+                        Gut, Heart, and Head. Explore the statements, reflect
+                        on what describes you, and respond honestly.
+                    </p>
+
+                    <div className="mt-8 flex flex-wrap gap-3">
+                        <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
+                            <p className="text-sm font-bold text-slate-900">
+                                Gut
                             </p>
-
-                            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-                                Your Energy Center Results
-                            </h1>
-
-                            <p className="mt-4 leading-7 text-slate-600">
-                                You have completed the Energy Center assessment.
-                                Here is your score breakdown.
+                            <p className="mt-1 text-xs text-slate-500">
+                                Instinct &amp; action
                             </p>
                         </div>
 
-                        <div className="mt-10 grid gap-4 sm:grid-cols-3">
+                        <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
+                            <p className="text-sm font-bold text-slate-900">
+                                Heart
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Feelings &amp; connection
+                            </p>
+                        </div>
+
+                        <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
+                            <p className="text-sm font-bold text-slate-900">
+                                Head
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Thought &amp; analysis
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="relative">
+                    <div className="absolute -inset-5 rounded-[2.5rem] bg-gradient-to-br from-indigo-300/40 via-violet-300/30 to-fuchsia-300/40 blur-2xl" />
+
+                    <div className="relative rounded-[2rem] border border-white bg-white/85 p-7 shadow-2xl shadow-indigo-200/50 backdrop-blur-xl sm:p-9">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-semibold text-indigo-600">
+                                    ARC CORE ASSESSMENT
+                                </p>
+
+                                <h2 className="mt-2 text-2xl font-bold text-slate-900">
+                                    Energy Center Assessment
+                                </h2>
+                            </div>
+
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-xl">
+                                ✦
+                            </div>
+                        </div>
+
+                        <div className="mt-7 space-y-4">
                             {[
                                 {
-                                    name: "Gut",
-                                    score: result.gut,
-                                    style: "bg-rose-50 border-rose-100 text-rose-700",
+                                    number: "01",
+                                    title: "Read each statement",
+                                    text: "Consider what genuinely reflects you.",
                                 },
                                 {
-                                    name: "Heart",
-                                    score: result.heart,
-                                    style: "bg-pink-50 border-pink-100 text-pink-700",
+                                    number: "02",
+                                    title: "Rank the statements",
+                                    text: "Use Most True, True, and Least True.",
                                 },
                                 {
-                                    name: "Head",
-                                    score: result.head,
-                                    style: "bg-indigo-50 border-indigo-100 text-indigo-700",
+                                    number: "03",
+                                    title: "Discover your results",
+                                    text: "Complete the groups to reveal your scores.",
                                 },
-                            ].map((center) => (
+                            ].map((step) => (
                                 <div
-                                    key={center.name}
-                                    className={`rounded-2xl border p-6 text-center ${center.style}`}
+                                    key={step.number}
+                                    className="flex gap-4 rounded-2xl border border-slate-100 bg-white p-4"
                                 >
-                                    <p className="text-sm font-semibold">
-                                        {center.name} Center
-                                    </p>
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">
+                                        {step.number}
+                                    </div>
 
-                                    <p className="mt-3 text-4xl font-bold">
-                                        {center.score}
-                                    </p>
+                                    <div>
+                                        <h3 className="font-semibold text-slate-900">
+                                            {step.title}
+                                        </h3>
 
-                                    <p className="mt-2 text-xs opacity-75">
-                                        Total score
-                                    </p>
+                                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                                            {step.text}
+                                        </p>
+                                    </div>
                                 </div>
                             ))}
                         </div>
 
-                        <div className="mt-8 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-6">
-                            <p className="text-sm font-semibold text-slate-700">
-                                Dominant Energy Center
-                            </p>
-
-                            <p className="mt-2 text-2xl font-bold text-indigo-700">
-                                {result.dominant
-                                    ? CENTER_STYLES[result.dominant]?.label ??
-                                    result.dominant
-                                    : "Shared top score"}
-                            </p>
-
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
-                                {result.dominant
-                                    ? "Your results identify this as your highest-scoring Energy Center."
-                                    : "Your results do not identify a single dominant center."}
-                            </p>
-                        </div>
-
-                        <div className="mt-6">
-                            <p className="text-sm font-semibold text-slate-700">
-                                Eligible Personality Assessment Centers
-                            </p>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {result.eligibleCenters.map((center) => {
-                                    const style = CENTER_STYLES[center];
-
-                                    return (
-                                        <span
-                                            key={center}
-                                            className={`rounded-full px-4 py-2 text-sm font-semibold ${style
-                                                ? `${style.background} ${style.color}`
-                                                : "bg-slate-100 text-slate-700"
-                                                }`}
-                                        >
-                                            {style?.label ?? center}
-                                        </span>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
-                            <h2 className="font-semibold text-slate-900">
-                                What happens next?
-                            </h2>
-
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
-                                Your eligibility for Stage Two is determined by
-                                your results and the assessment's access rules.
-                                Continue to your dashboard to review your
-                                assessment status.
-                            </p>
-                        </div>
-
                         <button
                             type="button"
-                            onClick={() => router.push("/dashboard")}
-                            className="mt-8 w-full rounded-xl bg-indigo-600 px-5 py-3.5 font-semibold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700"
-                        >
-                            Return to Dashboard
-                        </button>
-                    </div>
-                </section>
-            </main>
-        );
-    }
-
-    // Finishing Stage One.
-    if (isFinishing) {
-        return (
-            <main className="flex min-h-[70vh] items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4">
-                <div className="text-center">
-                    <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
-
-                    <h1 className="mt-5 text-xl font-bold text-slate-900">
-                        Calculating Your Results
-                    </h1>
-
-                    <p className="mt-2 text-sm text-slate-600">
-                        Please wait while we process your assessment.
-                    </p>
-                </div>
-            </main>
-        );
-    }
-
-    // Assessment welcome screen.
-    if (!group) {
-        return (
-            <main className="relative min-h-[75vh] overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-12 sm:px-8">
-                <DecorativeBackground />
-
-                <section className="relative mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
-                    <div>
-                        <p className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-indigo-700 shadow-sm">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            Your journey begins here
-                        </p>
-
-                        <h1 className="mt-6 text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-                            Discover the way{" "}
-                            <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
-                                you think,
-                            </span>{" "}
-                            feel, and act.
-                        </h1>
-
-                        <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 sm:text-lg">
-                            The ARC assessment begins with three Energy Centers:
-                            Gut, Heart, and Head. Explore the statements, reflect
-                            on what describes you, and respond honestly.
-                        </p>
-
-                        <div className="mt-8 flex flex-wrap gap-3">
-                            <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
-                                <p className="text-sm font-bold text-slate-900">
-                                    Gut
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                    Instinct & action
-                                </p>
-                            </div>
-
-                            <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
-                                <p className="text-sm font-bold text-slate-900">
-                                    Heart
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                    Feelings & connection
-                                </p>
-                            </div>
-
-                            <div className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
-                                <p className="text-sm font-bold text-slate-900">
-                                    Head
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                    Thought & analysis
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="relative">
-                        <div className="absolute -inset-5 rounded-[2.5rem] bg-gradient-to-br from-indigo-300/40 via-violet-300/30 to-fuchsia-300/40 blur-2xl" />
-
-                        <div className="relative rounded-[2rem] border border-white bg-white/85 p-7 shadow-2xl shadow-indigo-200/50 backdrop-blur-xl sm:p-9">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-semibold text-indigo-600">
-                                        ARC CORE ASSESSMENT
-                                    </p>
-                                    <h2 className="mt-2 text-2xl font-bold text-slate-900">
-                                        Energy Center Assessment
-                                    </h2>
-                                </div>
-
-                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-xl">
-                                    ✦
-                                </div>
-                            </div>
-
-                            <div className="mt-7 space-y-4">
-                                {[
-                                    {
-                                        number: "01",
-                                        title: "Read each statement",
-                                        text: "Consider what genuinely reflects you.",
-                                    },
-                                    {
-                                        number: "02",
-                                        title: "Rank the statements",
-                                        text: "Use Most True, True, and Least True.",
-                                    },
-                                    {
-                                        number: "03",
-                                        title: "Discover your results",
-                                        text: "Complete the groups to reveal your scores.",
-                                    },
-                                ].map((step) => (
-                                    <div
-                                        key={step.number}
-                                        className="flex gap-4 rounded-2xl border border-slate-100 bg-white p-4"
-                                    >
-                                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">
-                                            {step.number}
-                                        </div>
-
-                                        <div>
-                                            <h3 className="font-semibold text-slate-900">
-                                                {step.title}
-                                            </h3>
-                                            <p className="mt-1 text-sm leading-6 text-slate-500">
-                                                {step.text}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {flowError && (
-                                <div
-                                    role="alert"
-                                    className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"
-                                >
-                                    {flowError}
-                                </div>
-                            )}
-
-                            <button
-                                type="button"
-                                onClick={handleStartAssessment}
-                                disabled={isStarting}
-                                className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-4 font-semibold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 hover:from-indigo-700 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                                {isStarting
-                                    ? "Preparing your assessment..."
-                                    : sessionId
-                                        ? "Continue Assessment"
-                                        : "Begin Assessment"}
-
-                                {!isStarting && <span aria-hidden="true">→</span>}
-                            </button>
-
-                            <p className="mt-4 text-center text-xs leading-5 text-slate-500">
-                                Take your time. Answer honestly and choose what
-                                best reflects you.
-                            </p>
-                        </div>
-                    </div>
-                </section>
-            </main>
-        );
-    }
-
-    // Active assessment group.
-    const answeredCount = Object.keys(rankings).length;
-
-    const progressPercentage = Math.round(
-        ((group.groupNo - 1 + answeredCount / group.statements.length) /
-            group.totalGroups) *
-        100,
-    );
-
-    return (
-        <main className="relative min-h-[75vh] overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-10 sm:px-8 sm:py-14">
-            <DecorativeBackground />
-
-            <section className="relative mx-auto max-w-4xl">
-                <div className="mb-8">
-                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-indigo-600">
-                        ARC Core Assessment
-                    </p>
-
-                    <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-                        Energy Center Assessment
-                    </h1>
-
-                    <p className="mt-3 max-w-2xl leading-7 text-slate-600">
-                        Read each statement carefully. Assign one ranking to
-                        each statement based on how accurately it describes
-                        you.
-                    </p>
-                </div>
-
-                <div className="rounded-3xl border border-white bg-white/90 p-5 shadow-xl shadow-indigo-200/30 backdrop-blur-xl sm:p-8">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                                Group {group.groupNo} of {group.totalGroups}
-                            </p>
-
-                            <p className="mt-1 text-sm text-slate-500">
-                                {answeredCount} of {group.statements.length} statements ranked
-                            </p>
-                        </div>
-
-                        <span className="rounded-full bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700">
-                            {progressPercentage}% complete
-                        </span>
-                    </div>
-
-                    <div
-                        className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"
-                        role="progressbar"
-                        aria-label="Assessment progress"
-                        aria-valuenow={progressPercentage}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                    >
-                        <div
-                            className="h-full rounded-full bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-500 transition-all duration-300"
-                            style={{ width: `${progressPercentage}%` }}
-                        />
-                    </div>
-
-                    <div className="mt-8 space-y-5">
-                        {group.statements.map((statement, index) => {
-                            const centerStyle =
-                                CENTER_STYLES[statement.personalityType];
-
-                            return (
-                                <article
-                                    key={statement.id}
-                                    className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-200 hover:shadow-md sm:p-6"
-                                >
-                                    <div className="flex items-start gap-4">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-100 to-violet-100 text-sm font-bold text-indigo-700">
-                                            {String(index + 1).padStart(2, "0")}
-                                        </div>
-
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                                    Statement {index + 1}
-                                                </span>
-
-                                                {centerStyle && (
-                                                    <span
-                                                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${centerStyle.background} ${centerStyle.color}`}
-                                                    >
-                                                        {centerStyle.label}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <p className="mt-3 text-base font-medium leading-7 text-slate-800 sm:text-lg">
-                                                {statement.text}
-                                            </p>
-
-                                            <fieldset className="mt-5">
-                                                <legend className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                    How true is this for you?
-                                                </legend>
-
-                                                <div className="grid gap-2 sm:grid-cols-3">
-                                                    {RANK_OPTIONS.map((option) => {
-                                                        const selected =
-                                                            rankings[statement.id] === option.id;
-
-                                                        const disabled =
-                                                            isRankUsedByAnotherStatement(
-                                                                statement.id,
-                                                                option.id,
-                                                            );
-
-                                                        return (
-                                                            <button
-                                                                key={option.id}
-                                                                type="button"
-                                                                disabled={isSubmitting || disabled}
-                                                                aria-pressed={selected}
-                                                                onClick={() =>
-                                                                    handleRank(statement.id, option.id)
-                                                                }
-                                                                className={`rounded-xl border px-3 py-3 text-left transition ${selected
-                                                                    ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
-                                                                    : disabled
-                                                                        ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-40"
-                                                                        : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50"
-                                                                    }`}
-                                                            >
-                                                                <span className="flex items-center gap-2">
-                                                                    <span
-                                                                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected
-                                                                            ? "border-indigo-600 bg-indigo-600 text-white"
-                                                                            : "border-slate-300 bg-white"
-                                                                            }`}
-                                                                    >
-                                                                        {selected && (
-                                                                            <span className="text-xs">✓</span>
-                                                                        )}
-                                                                    </span>
-
-                                                                    <span
-                                                                        className={`text-sm font-semibold ${selected
-                                                                            ? "text-indigo-700"
-                                                                            : "text-slate-700"
-                                                                            }`}
-                                                                    >
-                                                                        {option.label}
-                                                                    </span>
-                                                                </span>
-
-                                                                <span className="mt-2 block pl-7 text-xs leading-5 text-slate-500">
-                                                                    {option.description}
-                                                                </span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </fieldset>
-                                        </div>
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-
-                    {flowError && (
-                        <div
-                            role="alert"
-                            className="mt-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-700"
-                        >
-                            {flowError}
-                        </div>
-                    )}
-
-                    <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                        <button
-                            type="button"
-                            onClick={() => router.push("/dashboard")}
-                            disabled={isSubmitting}
-                            className="rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                        >
-                            Exit to Dashboard
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={handleSubmitGroup}
-                            disabled={
-                                isSubmitting ||
-                                answeredCount !== group.statements.length
+                            onClick={() =>
+                                router.push("/energy_center_assessment")
                             }
-                            className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-indigo-200 transition hover:from-indigo-700 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-4 font-semibold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 hover:from-indigo-700 hover:to-violet-700"
                         >
-                            {isSubmitting
-                                ? "Saving your answers..."
-                                : group.groupNo === group.totalGroups
-                                    ? "Submit & View Results"
-                                    : "Save & Continue →"}
+                            Begin Assessment
+                            <span aria-hidden="true">→</span>
                         </button>
-                    </div>
 
-                    <p className="mt-4 text-center text-xs leading-5 text-slate-400">
-                        Each ranking can be used only once per group.
-                    </p>
+                        {/* Navigation only: no session is created, deleted, or reset. */}
+                        <button
+                            type="button"
+                            onClick={() => router.push("/dashboard")}
+                            className="mt-3 flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-4 font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+
+                        <p className="mt-4 text-center text-xs leading-5 text-slate-500">
+                            Take your time. Answer honestly and choose what
+                            best reflects you.
+                        </p>
+                    </div>
                 </div>
             </section>
         </main>
-    );
-}
-
-function DecorativeBackground() {
-    return (
-        <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 overflow-hidden"
-        >
-            <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-violet-300/25 blur-3xl" />
-
-            <div className="absolute -bottom-40 -left-32 h-[28rem] w-[28rem] rounded-full bg-indigo-300/25 blur-3xl" />
-
-            <svg
-                className="absolute right-0 top-0 h-80 w-80 text-indigo-400/15"
-                viewBox="0 0 320 320"
-                fill="none"
-            >
-                <circle cx="160" cy="160" r="110" stroke="currentColor" />
-                <circle cx="160" cy="160" r="80" stroke="currentColor" />
-                <circle cx="160" cy="160" r="50" stroke="currentColor" />
-
-                <path
-                    d="M160 20V300M20 160H300M61 61L259 259M259 61L61 259"
-                    stroke="currentColor"
-                />
-            </svg>
-
-            <svg
-                className="absolute bottom-0 left-0 h-64 w-64 text-violet-400/10"
-                viewBox="0 0 256 256"
-                fill="none"
-            >
-                {Array.from({ length: 7 }, (_, index) => (
-                    <circle
-                        key={index}
-                        cx="0"
-                        cy="256"
-                        r={24 + index * 22}
-                        stroke="currentColor"
-                    />
-                ))}
-            </svg>
-        </div>
     );
 }

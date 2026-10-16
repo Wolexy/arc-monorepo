@@ -49,6 +49,9 @@ export type NextEnergyGroupResponse = EnergyGroup | NextEnergyGroupCompleted;
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
+  // NestJS sends an empty HTTP 200 body when a handler returns null.
+  // Only endpoints documented to return null may opt in to this.
+  emptyBodyAsNull = false,
 ): Promise<T> {
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
@@ -77,7 +80,29 @@ async function request<T>(
     throw new Error(message);
   }
 
-  return response.json() as Promise<T>;
+  if (!emptyBodyAsNull) {
+    return response.json() as Promise<T>;
+  }
+
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    if (response.status === 200) {
+      return null as T;
+    }
+
+    throw new Error(
+      `Empty response body from ${endpoint} (HTTP ${response.status}).`,
+    );
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    throw new Error(
+      `Invalid JSON response from ${endpoint} (HTTP ${response.status}).`,
+    );
+  }
 }
 
 /**
@@ -131,5 +156,7 @@ export function getSavedEnergyResult(
 ): Promise<EnergyAssessmentResult | null> {
   return request<EnergyAssessmentResult | null>(
     `/energy/result/${encodeURIComponent(sessionId)}`,
+    {},
+    true,
   );
 }

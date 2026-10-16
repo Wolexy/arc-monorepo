@@ -108,7 +108,7 @@ export default function AssessmentPage() {
 
     // Check the user's existing assessment progress.
     useEffect(() => {
-        if (!user || !user.accessGranted && user.role !== "ADMIN") {
+        if (!user || !user.emailVerified || !user.accountEnabled) {
             return;
         }
 
@@ -219,6 +219,12 @@ export default function AssessmentPage() {
         setRankings((previous) => {
             const updated = { ...previous };
 
+            // Clicking the selected rank again clears it and frees it up.
+            if (previous[statementId] === rankId) {
+                delete updated[statementId];
+                return updated;
+            }
+
             // Remove the same rank from any other statement.
             for (const key of Object.keys(updated)) {
                 if (updated[Number(key)] === rankId) {
@@ -326,7 +332,7 @@ export default function AssessmentPage() {
     if (!user) return null;
 
     const hasAccess =
-        user.role === "ADMIN" || user.accessGranted;
+        user.role === "ADMIN" || user.accountEnabled && user.emailVerified;
 
     // Access restriction.
     if (!hasAccess) {
@@ -520,7 +526,7 @@ export default function AssessmentPage() {
     // Display the appropriate screen based on assessment progress.
     if (!group) {
         const isAuthorized =
-            user?.role === "ADMIN" || user?.accessGranted === true;
+            user?.role === "ADMIN" || (user?.accountEnabled === true && user?.emailVerified === true);
 
         const isCompleted = stage1Completed;
         const isInProgress = hasActiveSession && !isCompleted;
@@ -626,6 +632,16 @@ export default function AssessmentPage() {
                             >
                                 Try Again
                             </button>
+
+                            {/* Navigation only: no session is created, deleted, or reset. */}
+                            <button
+                                type="button"
+                                onClick={() => router.push("/dashboard")}
+                                disabled={isStarting}
+                                className="mx-auto mt-3 block rounded-xl border border-slate-200 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
                         </>
                     ) : (
                         <>
@@ -659,6 +675,16 @@ export default function AssessmentPage() {
                                         {buttonLabel}
                                     </button>
                                 )}
+
+                            {/* Navigation only: no session is created, deleted, or reset. */}
+                            <button
+                                type="button"
+                                onClick={() => router.push("/dashboard")}
+                                disabled={isStarting || isFinishing}
+                                className="mx-auto mt-3 block rounded-xl border border-slate-200 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
                         </>
                     )}
                 </section>
@@ -846,7 +872,7 @@ export default function AssessmentPage() {
                             disabled={isSubmitting}
                             className="rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                         >
-                            Exit to Dashboard
+                            Cancel
                         </button>
 
                         <button
@@ -867,7 +893,8 @@ export default function AssessmentPage() {
                     </div>
 
                     <p className="mt-4 text-center text-xs leading-5 text-slate-400">
-                        Each ranking can be used only once per group.
+                        Each ranking can be used only once per group. Click a
+                        selected ranking to clear it.
                     </p>
                 </div>
             </section>

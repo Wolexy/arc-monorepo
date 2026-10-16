@@ -56,11 +56,11 @@ export default function Stage1ResultsPage() {
                 setUser(currentUser);
 
                 if (
-                    currentUser.role !== "ADMIN" &&
-                    !currentUser.accessGranted
+                    !currentUser.accountEnabled ||
+                    !currentUser.emailVerified
                 ) {
                     setError(
-                        "Your account does not currently have access to the assessment.",
+                        "Your account must be enabled and your email verified to access the assessment.",
                     );
                     return;
                 }

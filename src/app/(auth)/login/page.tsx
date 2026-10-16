@@ -21,9 +21,11 @@ export default function LoginPage() {
         setIsSubmitting(true);
 
         try {
-            await login(email, password);
+            const { user } = await login(email, password);
 
-            router.push("/dashboard");
+            // Administrators land on their own dashboard. The backend
+            // still enforces the ADMIN role on every /admin request.
+            router.push(user.role === "ADMIN" ? "/admin" : "/dashboard");
         } catch (error) {
             setError(
                 error instanceof Error

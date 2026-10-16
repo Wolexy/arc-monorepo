@@ -13,7 +13,10 @@ export interface LoginResponse {
     id: number;
     email: string;
     role: string;
-    accessGranted: boolean;
+    accessGranted: boolean; // Temporary backward compatibility
+    stage2AccessGranted: boolean;
+    accountEnabled: boolean;
+    emailVerified: boolean;
   };
 }
 
@@ -21,7 +24,10 @@ export interface CurrentUser {
   id: number;
   email: string;
   role: string;
-  accessGranted: boolean;
+  accessGranted: boolean; // Temporary backward compatibility
+  stage2AccessGranted: boolean;
+  accountEnabled: boolean;
+  emailVerified: boolean;
 }
 
 export interface VerifyEmailResponse {
@@ -77,6 +83,8 @@ export async function verifyEmail(token: string): Promise<VerifyEmailResponse> {
   return response.json();
 }
 
+
+//Login function to authenticate a user with email and password. It sends a POST request to the API and handles errors appropriately, providing user-friendly messages for invalid credentials or other issues.//
 export async function login(
   email: string,
   password: string,
@@ -129,20 +137,21 @@ export async function getCurrentUser(): Promise<CurrentUser> {
 }
 
 export async function logout(): Promise<{ message: string }> {
-  const response = await fetch(`${API_URL}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
+  try {
+    const response = await fetch(`${API_URL}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
 
-  if (!response.ok) {
-    const error = await response.json();
-
-    throw new Error(
-      Array.isArray(error.message)
-        ? error.message.join(", ")
-        : error.message || "Logout failed",
-    );
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error("Server logout request failed:", error);
   }
 
-  return response.json();
+  // The server may reject logout when the account is disabled
+  // or the session is no longer valid. The caller must still
+  // clear the frontend authentication state.
+  return { message: "Logged out locally." };
 }

@@ -17,7 +17,12 @@ export interface AssessmentProgress {
   eligibleCenters: string[];
 }
 
-async function request<T>(endpoint: string): Promise<T> {
+async function request<T>(
+  endpoint: string,
+  // NestJS sends an empty HTTP 200 body when a handler returns null.
+  // Only endpoints documented to return null may opt in to this.
+  emptyBodyAsNull = false,
+): Promise<T> {
   const response = await fetch(`${API_URL}${endpoint}`, {
     method: "GET",
     credentials: "include",
@@ -43,8 +48,28 @@ async function request<T>(endpoint: string): Promise<T> {
 
     throw new Error(message);
   }
+//Debuggging
+  //return response.json() as Promise<T>;
+const responseText = await response.text();
 
-  return response.json() as Promise<T>;
+if (!responseText.trim()) {
+  if (emptyBodyAsNull && response.status === 200) {
+    return null as T;
+  }
+
+  throw new Error(
+    `Empty response body from ${endpoint} (HTTP ${response.status}).`,
+  );
+}
+
+try {
+  return JSON.parse(responseText) as T;
+} catch {
+  throw new Error(
+    `Invalid JSON response from ${endpoint} (HTTP ${response.status}).`,
+  );
+}
+
 }
 
 /**
@@ -52,7 +77,7 @@ async function request<T>(endpoint: string): Promise<T> {
  * Returns null when no active session exists.
  */
 export function getActiveAssessmentSession(): Promise<ActiveAssessmentSession | null> {
-  return request<ActiveAssessmentSession | null>("/sessions/active");
+  return request<ActiveAssessmentSession | null>("/sessions/active", true);
 }
 
 /**

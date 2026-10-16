@@ -17,14 +17,12 @@ export default function LogoutButton() {
 
         try {
             await logout();
-            router.replace("/login");
         } catch (error) {
             console.error("Logout failed:", error);
-
-            alert(
-                "Unable to sign out because the server request failed. Please try again."
-            );
         } finally {
+            // Always leave the protected application,
+            // even if the server logout request fails.
+            router.replace("/login");
             setIsLoggingOut(false);
         }
     }
