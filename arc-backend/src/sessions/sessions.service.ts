@@ -24,31 +24,43 @@ export class SessionsService {
 
   async startUserSession(userId: number): Promise<TestSession> {
     /* ------------------------------------------------
-  1️⃣ Check if user already has an unfinished session
+  1️⃣ Each user has exactly one session (one_test_per_user).
+     Return it whether it is unfinished or completed, so it is
+     resumed rather than recreated.
   -------------------------------------------------- */
-    const existing = await this.sessionRepo.findOne({
-      where: {
-        userId: userId,
-        completedAt: IsNull(),
-      },
-      order: {
-        startedAt: 'DESC',
-      },
-    });
+    const existing = await this.findUserSession(userId);
 
     if (existing) {
       return existing;
     }
 
     /* ------------------------------------------------
-  2️⃣ Otherwise create new session
+  2️⃣ Otherwise create the user's session. ON CONFLICT DO NOTHING
+     lets one_test_per_user resolve races: a concurrent request that
+     inserted first wins and this one reads that row back.
   -------------------------------------------------- */
-    const session = this.sessionRepo.create({
-      userId: userId,
-      startedAt: new Date(),
-    });
+    await this.sessionRepo
+      .createQueryBuilder()
+      .insert()
+      .into(TestSession)
+      .values({ userId, startedAt: new Date() })
+      .orIgnore()
+      .execute();
 
-    return this.sessionRepo.save(session);
+    const session = await this.findUserSession(userId);
+
+    if (!session) {
+      throw new NotFoundException('Unable to create assessment session');
+    }
+
+    return session;
+  }
+
+  private findUserSession(userId: number): Promise<TestSession | null> {
+    return this.sessionRepo.findOne({
+      where: { userId },
+      order: { startedAt: 'ASC' },
+    });
   }
 
   /********************************************
