@@ -118,7 +118,7 @@ getActive Session for a user - returns the most recent active session or null if
           where: { id: session.userId },
         });
 
-        accessGranted = user?.accessGranted ?? false;
+        accessGranted = user?.stage2AccessGranted ?? false;
       } catch (err) {
         console.error('⚠️ user lookup error:', err);
       }
@@ -145,13 +145,32 @@ getActive Session for a user - returns the most recent active session or null if
       throw new NotFoundException('Session not found');
     }
 
-    if (role === 'ADMIN') {
-      return session;
-    }
-
-    if (session.userId !== userId) {
+    if (role !== 'ADMIN' && session.userId !== userId) {
       throw new ForbiddenException('You do not have access to this session');
     }
+
+    if (!session.userId) {
+      throw new ForbiddenException(
+        'This session is not associated with a user',
+      );
+    }
+
+    const owner = await this.userRepo.findOne({
+      where: { id: session.userId },
+    });
+
+    if (!owner) {
+      throw new NotFoundException('Session owner not found');
+    }
+
+    if (!owner.accountEnabled) {
+      throw new ForbiddenException('The session owner account is disabled');
+    }
+
+    if (!owner.emailVerified) {
+      throw new ForbiddenException('The session owner email is not verified');
+    }
+
     return session;
   }
 }

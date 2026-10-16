@@ -37,9 +37,4 @@ export class EnergyController {
   ) {
     return this.energyService.getStage1Result(sessionId, req.user.userId);
   }
-  
-  @Post('unlock/:sessionId')
-  async unlock(@Param('sessionId') sessionId: string, @Req() req: AuthRequest) {
-    return this.energyService.unlockStage2(sessionId, req.user.userId);
-  }
 }

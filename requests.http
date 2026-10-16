@@ -4,9 +4,9 @@
 
 @baseUrl = http://localhost:4200
 
-@userToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsImVtYWlsIjoid29ya2Zsb3dAdGVzdC5jb20iLCJyb2xlIjoiVVNFUiIsImFjY2Vzc0dyYW50ZWQiOnRydWUsImlhdCI6MTc4NzQzMTgyMCwiZXhwIjoxNzg3NTE4MjIwfQ.QQ4S7tfjHO_t-Q8WjcOrtOgIycd-Dh5wv0lyY4nPyoQ
+@userToken =eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdEBhcmMuY29tIiwicm9sZSI6IlVTRVIiLCJhY2Nlc3NHcmFudGVkIjp0cnVlLCJzdGFnZTJBY2Nlc3NHcmFudGVkIjp0cnVlLCJhY2NvdW50RW5hYmxlZCI6dHJ1ZSwiZW1haWxWZXJpZmllZCI6dHJ1ZSwiaWF0IjoxNzkyMDgyNTUzLCJleHAiOjE3OTIxNjg5NTN9.p7DjFG46MVMtVgm7yBtXwUfKb_XpklE6jpVMIZKYn08
 
-@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoiYWRtaW5AYXJjLmNvbSIsInJvbGUiOiJBRE1JTiIsImFjY2Vzc0dyYW50ZWQiOnRydWUsImlhdCI6MTc4MTU1MTQ0MSwiZXhwIjoxNzgxNjM3ODQxfQ.10efCW2vQ9bVDV1GvQx_KqETK4-rPTAmr30Egdguzb0
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsImVtYWlsIjoia29sYWFhamFsYUB0ZXN0LmNvbSIsInJvbGUiOiJBRE1JTiIsImFjY2Vzc0dyYW50ZWQiOnRydWUsInN0YWdlMkFjY2Vzc0dyYW50ZWQiOnRydWUsImFjY291bnRFbmFibGVkIjp0cnVlLCJlbWFpbFZlcmlmaWVkIjp0cnVlLCJpYXQiOjE3OTIxMDg3NDcsImV4cCI6MTc5MjE5NTE0N30.QI3grTaBLRL0gKSSr-ifIOYe4lVVu402wuvVAO44Kao
 
 @intruderToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsImVtYWlsIjoiaW50cnVkZXJAdGVzdC5jb20iLCJyb2xlIjoiVVNFUiIsImFjY2Vzc0dyYW50ZWQiOnRydWUsImlhdCI6MTc4NzQzMjExMywiZXhwIjoxNzg3NTE4NTEzfQ.5NmCy0zOBbeCO9l5Oq09ieW1yFNhjZ541iHo4b8bgoU
 
@@ -46,7 +46,7 @@ POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-  "email": "workflow@test.com",
+  "email": "test@arc.com",
   "password": "password123"
 }
 
@@ -143,9 +143,24 @@ POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@arc.com",
+  "email": "kolaaajala@test.com",
   "password": "password123"
 }
+
+
+### Account Status Change
+PATCH {{baseUrl}}/admin/users/2/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "accountEnabled": false
+}
+
+
+### Check Current User Status
+GET {{baseUrl}}/users/me
+Content-Type: application/json
 
 
 ### List Users

@@ -1,6 +1,17 @@
-import { Controller, Get, Post, Param, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  ParseIntPipe,
+  Body,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AdminService } from './admin.service';
+import { UpdateAccountStatusDto } from './dto/update-account-status.dto';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -21,12 +32,28 @@ export class AdminController {
   }
 
   @Post('grant/:userId')
-  grantAccess(@Param('userId') userId: string, @Req() req : AuthRequest) {
-    return this.adminService.grantAccess(Number(userId), req.user.userId);
+  grantAccess(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Req() req: AuthRequest,
+  ) {
+    return this.adminService.grantAccess(userId, req.user.userId);
   }
 
   @Post('revoke/:userId')
-  revokeAccess(@Param('userId') userId: string) {
-    return this.adminService.revokeAccess(Number(userId));
+  revokeAccess(@Param('userId', ParseIntPipe) userId: number) {
+    return this.adminService.revokeAccess(userId);
+  }
+
+  @Patch('users/:userId/status')
+  updateAccountStatus(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body: UpdateAccountStatusDto,
+    @Req() req: AuthRequest,
+  ) {
+    return this.adminService.updateAccountStatus(
+      userId,
+      body.accountEnabled,
+      req.user.userId,
+    );
   }
 }

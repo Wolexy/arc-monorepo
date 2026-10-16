@@ -56,12 +56,13 @@ export class AuthService {
       email: email,
       passwordHash: hash,
       role: 'USER',
-      accessGranted: false,
-      createdAt: new Date(),
-
+      accessGranted: true,
+      stage2AccessGranted: false,
+      accountEnabled: true,
       emailVerified: false,
       emailVerificationToken: token,
       emailVerificationExpires: TokenUtil.expiresInHours(expiryHours),
+      createdAt: new Date(),
     });
 
     await this.userRepo.save(user);
@@ -96,11 +97,20 @@ export class AuthService {
       );
     }
 
+    if (!user.accountEnabled) {
+      throw new UnauthorizedException(
+        'Your account has been disabled. Please contact the administrator.',
+      );
+    }
+
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       accessGranted: user.accessGranted,
+      stage2AccessGranted: user.stage2AccessGranted,
+      accountEnabled: user.accountEnabled,
+      emailVerified: user.emailVerified,
     };
 
     const token: string = this.jwtService.sign(payload);
@@ -124,9 +134,12 @@ export class AuthService {
         email: user.email,
         role: user.role,
         accessGranted: user.accessGranted,
+        stage2AccessGranted: user.stage2AccessGranted,
+        accountEnabled: user.accountEnabled,
+        emailVerified: user.emailVerified,
       },
     };
-  }
+  }//login end
 
   async verifyEmail(token: string) {
     const user = await this.userRepo.findOne({

@@ -45,6 +45,9 @@ export class UsersService {
         'role',
         'accessGranted',
         'accessGrantedAt',
+        'accountEnabled',
+        'stage2AccessGranted',
+        'emailVerified',
         'createdAt',
         'lastLoginAt',
       ],
@@ -86,8 +89,9 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    user.accessGranted = true;
-    user.accessGrantedAt = new Date();
+  user.stage2AccessGranted = true;
+  user.accessGranted = true; // Temporary backward compatibility
+  user.accessGrantedAt = new Date();
 
     return this.userRepo.save(user);
   }
@@ -105,7 +109,10 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    user.accessGranted = false;
+    user.stage2AccessGranted = false;
+    user.accessGranted = false; // Temporary backward compatibility
+    user.accessGrantedAt = null;
+    user.accessGrantedBy = null;
 
     return this.userRepo.save(user);
   }

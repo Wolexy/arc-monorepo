@@ -2,10 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  HttpException,
-  HttpStatus,
   Injectable,
-  NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,7 +16,6 @@ import { EnergyResultEligibleCenter } from './entities/energy-result-eligible.en
 import { TestSession } from 'src/sessions/entities/test-session.entity';
 import { EnergyScoreRow } from '../energy/dto/energy-score-row.dto';
 import { User } from 'src/users/entities/user.entity';
-import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EnergyService implements OnModuleInit {
@@ -49,7 +45,6 @@ export class EnergyService implements OnModuleInit {
     @InjectRepository(User)
     private userRepo: Repository<User>,
 
-    private readonly configService: ConfigService,
   ) {}
 
   async onModuleInit() {
@@ -72,11 +67,31 @@ export class EnergyService implements OnModuleInit {
         userId,
       },
     });
+
     if (!session) {
       throw new ForbiddenException(
         'Assessment session not found or access denied.',
       );
     }
+
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new ForbiddenException('User account not found.');
+    }
+
+    if (!user.accountEnabled) {
+      throw new ForbiddenException('Your account is disabled.');
+    }
+
+    if (!user.emailVerified) {
+      throw new ForbiddenException(
+        'Please verify your email before accessing ARC.',
+      );
+    }
+
     return session;
   }
 
@@ -353,46 +368,4 @@ export class EnergyService implements OnModuleInit {
       eligibleCenters: eligibleRecords.map((record) => record.energyCenter),
     };
   } //getStage1Result
-
-  /*-----------------Unlocked Stage 2 --------------------------
-  unlock Stage 2 by setting stage2UnlockedAt timestamp. 
-This allows frontend to know when to allow access to Stage 2, 
-without needing to check energy results or eligible centers separately. 
-*****************************************************************/
-  async unlockStage2(sessionId: string, userId: number) {
-    const session: TestSession | null = await this.validateSessionOwnership(
-      sessionId,
-      userId,
-    );
-
-    /* -----------------------------------------
-     DEV BYPASS CHECK
-  ------------------------------------------*/
-    const bypass = this.configService.get('DEV_BYPASS_PAYMENT') === 'true';
-
-    if (!bypass) {
-      // 🔒 future real payment validation
-      throw new HttpException('Payment required', HttpStatus.PAYMENT_REQUIRED);
-    }
-
-    /* -----------------------------------------
-     UNLOCK STAGE 2
-  ------------------------------------------*/
-    session.stage2UnlockedAt = new Date();
-    await this.sessionRepo.save(session);
-
-    /* -----------------------------------------
-     GRANT USER ACCESS
-  ------------------------------------------*/
-    if (session.userId) {
-      await this.userRepo.update(session.userId, {
-        accessGranted: true,
-      });
-    }
-
-    return {
-      unlocked: true,
-      stage2UnlockedAt: session.stage2UnlockedAt,
-    };
-  } // End unlockStage2
 }
