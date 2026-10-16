@@ -1,0 +1,214 @@
+### List all sessions
+GET http://localhost:3000/
+
+
+### 1 - Create a new session
+POST http://localhost:3000/sessions/start
+Content-Type: application/json
+
+{
+  "email": "test@test.com"
+}
+
+
+### 2a - Get session details
+GET http://localhost:3000/energy/next/11e653aa-4c30-4eac-9f5b-e1b5274f01da
+
+
+
+### 2b - Submit energy rankings
+POST http://localhost:3000/energy/submit
+Content-Type: application/json
+
+{
+  "sessionId": "11e653aa-4c30-4eac-9f5b-e1b5274f01da",
+  "energyStatementGroupId": 10,
+  "rankings": [
+    { "statementId": 28, "rankId": 3},
+    { "statementId": 29, "rankId": 1},
+    { "statementId": 30, "rankId": 2}
+  ]
+}
+
+### 3 - Finish stage 1 of the session
+POST http://localhost:3000/energy/finish/11e653aa-4c30-4eac-9f5b-e1b5274f01da
+
+
+### 4 - Get Personality Test Access
+GET http://localhost:3000/personality/access/11e653aa-4c30-4eac-9f5b-e1b5274f01da
+
+
+### 5 - Post Personality - start session - call on after 4 - get access returns true
+POST http://localhost:3000/personality/start/11e653aa-4c30-4eac-9f5b-e1b5274f01da
+
+
+### Get Personality Session Status
+GET http://localhost:3000/personality/11e653aa-4c30-4eac-9f5b-e1b5274f01da/status
+
+
+//**************************************************
+//  Personality Test
+//
+//**************************************************
+### 6a - Get next Personality question
+GET http://localhost:3000/personality/11e653aa-4c30-4eac-9f5b-e1b5274f01da/HEAD/next
+
+
+### 6b Submit Personality answer
+POST http://localhost:3000/personality/11e653aa-4c30-4eac-9f5b-e1b5274f01da/HEAD/answer
+Content-Type: application/json
+
+{
+  "questionId": 90,
+  "rankChoiceId": 2
+} 
+
+
+### 7 - get next energy center to determine personality type to run in 6a and 6b
+GET http://localhost:3000/personality/next-center/11e653aa-4c30-4eac-9f5b-e1b5274f01da
+
+
+### 8 - Get final personality result
+GET http://localhost:3000/personality/11e653aa-4c30-4eac-9f5b-e1b5274f01da/final
+
+
+### Register a new user
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@test.com",
+  "password": "password123",
+  "confirmPassword": "password123"
+}
+
+### Login
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@arc.com",
+  "password": "pass123"
+}
+
+
+### List Users
+GET http://localhost:3000/admin/users
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### Get Session Endpoing
+GET http://localhost:3000/sessions/progress/
+
+### Get User Details
+GET http://localhost:3000/users/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoiYWRtaW5AYXJjLmNvbSIsInJvbGUiOiJBRE1JTiIsImFjY2Vzc0dyYW50ZWQiOnRydWUsImlhdCI6MTc3MzgwNDA0OSwiZXhwIjoxNzczODkwNDQ5fQ.mb8oVefw5DD15lrLWdfCtaNqRUyLPcHOQ45FnHXveZU
+
+
+
+
+### Get User Details
+GET http://localhost:3000/users/me
+
+
+PHASE 1 — DEFINE THE “SOURCE OF TRUTH” (CRITICAL)
+//Personality Test Endpoints
+GET  /sessions/start
+GET  /sessions/:id/progress
+POST /personality/start/:sessionId
+GET  /personality/next-center/:sessionId
+GET  /personality/:sessionId/:center/next
+POST /personality/:sessionId/:center/answer
+GET  /personality/:sessionId/final
+
+PHASE 2 — MANUAL E2E TEST SCRIPT (YOU FOLLOW THIS EXACTLY)
+
+Run this like QA:
+
+TEST 1 — Fresh User Flow
+	1.	Login
+	2.	Click Start Assessment
+
+Expected:
+✔ Session created
+✔ sessionId stored in localStorage
+✔ Redirect to personality page
+
+TEST 2 — Stage 2 Entry
+✔ nextCenter returns GUT/HEAD/HEART
+✔ First question loads
+✔ Options show (labels working now)
+
+TEST 3 — Answer Flow
+✔ questionIndex increments
+✔ next question loads
+✔ no duplicate question
+✔ no crash at last question
+
+TEST 4 — Center Transition
+
+After ~45 questions:
+✔ automatically switches center
+✔ questionIndex resets
+✔ new center label shows
+
+TEST 5 — Completion
+
+After all centers:
+✔ nextCenter returns completed = true
+✔ /final endpoint called
+✔ result page loads
+
+TEST 6 — Resume
+	1.	Refresh browser mid-test
+
+Expected:
+✔ sessionId still exists
+✔ resumes from correct center
+✔ resumes from correct question
+
+PHASE 3 — ADD LOGGING (TEMP BUT POWERFUL)
+
+In frontend:
+console.log('SESSION:', this.sessionId);
+console.log('CENTER:', this.currentCenter);
+console.log('QUESTION:', this.question?.id);
+console.log('INDEX:', this.questionIndex);
+
+In backend:
+console.log('NEXT CENTER:', nextCenter);
+console.log('QUESTION FETCHED:', question?.id);
+console.log('ANSWER SAVED:', questionId, rankChoiceId);
+
+PHASE 4 — COMMON BUG CHECKLIST
+
+You already hit many of these:
+
+✔ Data mismatch
+	•	label vs text ✅ fixed
+
+✔ FK mismatch
+	•	rank_choice vs answer_options ✅ fixed
+
+✔ State bugs
+	•	loading not updating ✅ fixed
+
+✔ UI bugs
+	•	radio layout ✅ fixed
+[ ] duplicate answers blocked?
+[ ] question count accurate?
+[ ] session persists after logout/login?
+[ ] center order correct?
+
+PHASE 5 — AUTOMATED E2E (PLAYWRIGHT — RECOMMENDED)
+
+Install:
+pnpm add -D @playwright/test
+
+PHASE 6 — UI POLISH (AFTER STABILITY)
+
+Only AFTER flow works:
+	•	progress bar
+	•	center icons (🔥 ❤️ 🧠)
+	•	animations
+	•	disable button until selection
+	•	result visualization

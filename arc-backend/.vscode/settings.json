@@ -1,0 +1,4 @@
+{
+  "sarif-viewer.connectToGithubCodeScanning": "off",
+  "js/ts.tsdk.path": "node_modules\\typescript\\lib"
+}
