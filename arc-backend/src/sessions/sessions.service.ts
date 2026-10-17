@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository } from 'typeorm';
 import { TestSession } from './entities/test-session.entity';
 import { User } from '../users/entities/user.entity';
 import { PersonalitySession } from '../personality/entities/personality-session.entity';
@@ -64,18 +64,12 @@ export class SessionsService {
   }
 
   /********************************************
-getActive Session for a user - returns the most recent active session or null if none
+getActive Session for a user - returns the user's single session
+(unfinished or completed) or null if none. Callers use getProgress to
+tell an in-progress session from a completed one.
  ----------------------------------------------*/
   async getActiveSession(userId: number): Promise<TestSession | null> {
-    return this.sessionRepo.findOne({
-      where: {
-        userId,
-        completedAt: IsNull(),
-      },
-      order: {
-        startedAt: 'DESC',
-      },
-    });
+    return this.findUserSession(userId);
   }
 
   async getProgress(sessionId: string) {
