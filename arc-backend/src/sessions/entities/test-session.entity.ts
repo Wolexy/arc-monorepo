@@ -27,6 +27,14 @@ export class TestSession {
   @Column({ name: 'stage1_completed_at', type: 'timestamp', nullable: true })
   stage1CompletedAt?: Date | null;
 
+  // First time the owner successfully loaded their saved Stage 1 results.
+  @Column({
+    name: 'stage1_results_viewed_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  stage1ResultsViewedAt?: Date | null;
+
   @Column({ name: 'stage2_unlocked_at', type: 'timestamp', nullable: true })
   stage2UnlockedAt?: Date | null;
 

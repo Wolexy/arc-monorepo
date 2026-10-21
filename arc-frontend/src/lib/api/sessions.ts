@@ -1,3 +1,5 @@
+import { ApiError } from "./assessment";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4200";
 
 export interface ActiveAssessmentSession {
@@ -5,6 +7,7 @@ export interface ActiveAssessmentSession {
   userId: number | null;
   startedAt: string;
   stage1CompletedAt: string | null;
+  stage1ResultsViewedAt: string | null;
   stage2UnlockedAt: string | null;
   completedAt: string | null;
 }
@@ -12,6 +15,7 @@ export interface ActiveAssessmentSession {
 export interface AssessmentProgress {
   sessionId: string;
   stage1Completed: boolean;
+  stage1ResultsViewed: boolean;
   stage2Started: boolean;
   accessGranted: boolean;
   eligibleCenters: string[];
@@ -46,7 +50,8 @@ async function request<T>(
       // Keep the default message if the response is not JSON.
     }
 
-    throw new Error(message);
+    // Still an Error for existing callers; status lets pages detect 401.
+    throw new ApiError(message, response.status);
   }
 //Debuggging
   //return response.json() as Promise<T>;

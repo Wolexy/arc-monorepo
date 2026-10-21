@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, Not } from 'typeorm';
+import { EntityManager, Repository, IsNull, Not } from 'typeorm';
 import { TestSession } from '../sessions/entities/test-session.entity';
 import { PersonalitySession } from './entities/personality-session.entity';
 import { PersonalityQuestion } from './entities/personality-question.entity';
@@ -22,6 +23,8 @@ import { DominantTypeReportDto } from './dto/dominant-type-report.dto';
 import { RunnerUpTypeReportDto } from './dto/runner-up-type-report.dto';
 
 type EnergyCenter = 'GUT' | 'HEART' | 'HEAD';
+
+const ENERGY_CENTERS: readonly EnergyCenter[] = ['GUT', 'HEART', 'HEAD'];
 
 interface EnergyCenterRow {
   energy_center: EnergyCenter;
@@ -140,6 +143,124 @@ export class PersonalityService {
   }
 
   /* -----------------------------------------
+     STAGE 2 STATE HELPERS
+  ------------------------------------------*/
+
+  // Eligible centers in Stage 1 score order: rows are inserted
+  // highest score first, so their id preserves that order.
+  private async getEligibleCenters(
+    manager: EntityManager,
+    testSessionId: string,
+  ): Promise<EnergyCenter[]> {
+    const rows: EnergyCenterRow[] = await manager.query(
+      `
+        SELECT energy_center
+        FROM energy_result_eligible_centers
+        WHERE session_id = $1
+        ORDER BY id ASC
+      `,
+      [testSessionId],
+    );
+
+    return rows.map((r) => r.energy_center);
+  }
+
+  // Stage 2 is complete once the test session is marked complete or final
+  // results exist. Legacy completed sessions have both.
+  private async isStage2Completed(
+    manager: EntityManager,
+    testSessionId: string,
+  ): Promise<boolean> {
+    const session = await manager
+      .getRepository(TestSession)
+      .findOne({ where: { id: testSessionId } });
+
+    if (session?.completedAt) return true;
+
+    const finalCount = await manager
+      .getRepository(FinalPersonalityResult)
+      .count({ where: { testSessionId } });
+
+    return finalCount > 0;
+  }
+
+  private async assertStage2NotCompleted(
+    manager: EntityManager,
+    testSessionId: string,
+  ) {
+    if (await this.isStage2Completed(manager, testSessionId)) {
+      throw new ConflictException('STAGE2_ALREADY_COMPLETED');
+    }
+  }
+
+  // The requested center must be a real center and eligible for this session.
+  private async resolveEligibleCenter(
+    manager: EntityManager,
+    testSessionId: string,
+    energyCenter: string,
+  ): Promise<{ center: EnergyCenter; eligible: EnergyCenter[] }> {
+    const center = energyCenter as EnergyCenter;
+
+    if (!ENERGY_CENTERS.includes(center)) {
+      throw new BadRequestException('INVALID_ENERGY_CENTER');
+    }
+
+    const eligible = await this.getEligibleCenters(manager, testSessionId);
+
+    if (!eligible.includes(center)) {
+      throw new ForbiddenException('CENTER_NOT_ELIGIBLE');
+    }
+
+    return { center, eligible };
+  }
+
+  // The first eligible center, in order, that is not yet completed.
+  private async getCurrentCenter(
+    manager: EntityManager,
+    testSessionId: string,
+    eligible: EnergyCenter[],
+  ): Promise<EnergyCenter | undefined> {
+    const sessions = await manager
+      .getRepository(PersonalitySession)
+      .find({ where: { testSessionId } });
+
+    const completedCenters = sessions
+      .filter((s) => s.completedAt)
+      .map((s) => s.energyCenter);
+
+    return eligible.find((c) => !completedCenters.includes(c));
+  }
+
+  // The lowest question_order question in this center not yet answered.
+  private async findNextUnansweredQuestion(
+    manager: EntityManager,
+    personalitySessionId: number,
+    energyCenter: EnergyCenter,
+  ): Promise<PersonalityQuestion | undefined> {
+    const answered = await manager
+      .getRepository(PersonalityResponse)
+      .find({ where: { personalitySessionId } });
+
+    const answeredIds = new Set(answered.map((r) => r.questionId));
+
+    const questions = await manager.getRepository(PersonalityQuestion).find({
+      where: { energyCenter },
+      order: { questionOrder: 'ASC', id: 'ASC' },
+    });
+
+    return questions.find((q) => !answeredIds.has(q.id));
+  }
+
+  private completedCenterResponse(energyCenter: EnergyCenter) {
+    return {
+      completed: true,
+      stage: 'PERSONALITY',
+      energyCenter,
+      message: 'Personality assessment completed',
+    };
+  }
+
+  /* -----------------------------------------
      START PERSONALITY
   ------------------------------------------*/
   async startPersonality(
@@ -163,33 +284,25 @@ export class PersonalityService {
 
     if (!access.allowed) throw new UnauthorizedException(access.reason);
 
-    const rows: EnergyCenterRow[] = await this.testSessionRepo.manager.query(
-      `
-        SELECT energy_center
-        FROM energy_result_eligible_centers
-        WHERE session_id = $1
-      `,
-      [testSessionId],
-    );
+    const manager = this.testSessionRepo.manager;
 
-    if (!rows.length) throw new NotFoundException('No eligible centers found');
+    await this.assertStage2NotCompleted(manager, testSessionId);
+
+    const centers = await this.getEligibleCenters(manager, testSessionId);
+
+    if (!centers.length)
+      throw new NotFoundException('No eligible centers found');
 
     const created: PersonalitySession[] = [];
 
-    for (const row of rows) {
-      const center = row.energy_center;
-
-      let ps = await this.personalitySessionRepo.findOne({
-        where: { testSessionId, energyCenter: center },
-      });
-
-      if (!ps) {
-        ps = await this.personalitySessionRepo.save({
+    for (const center of centers) {
+      created.push(
+        await this.getOrCreatePersonalitySession(
           testSessionId,
-          energyCenter: center,
-        });
-      }
-      created.push(ps);
+          center,
+          manager,
+        ),
+      );
     }
 
     return {
@@ -201,21 +314,30 @@ export class PersonalityService {
   /* -----------------------------------------
      GET OR CREATE SESSION
   ------------------------------------------*/
+  // ON CONFLICT DO NOTHING lets uq_personality_session resolve concurrent
+  // requests: whichever insert lands first wins and both read that row.
   async getOrCreatePersonalitySession(
     testSessionId: string,
     energyCenter: EnergyCenter,
+    manager: EntityManager = this.testSessionRepo.manager,
   ): Promise<PersonalitySession> {
-    let ps = await this.personalitySessionRepo.findOne({
+    const repo = manager.getRepository(PersonalitySession);
+
+    const existing = await repo.findOne({
       where: { testSessionId, energyCenter },
     });
 
-    if (!ps) {
-      ps = await this.personalitySessionRepo.save({
-        testSessionId,
-        energyCenter,
-      });
-    }
-    return ps;
+    if (existing) return existing;
+
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .into(PersonalitySession)
+      .values({ testSessionId, energyCenter })
+      .orIgnore()
+      .execute();
+
+    return repo.findOneOrFail({ where: { testSessionId, energyCenter } });
   }
 
   /* -----------------------------------------
@@ -238,35 +360,51 @@ export class PersonalityService {
       throw new ForbiddenException(access.reason);
     }
 
-    const ps = await this.getOrCreatePersonalitySession(
+    const manager = this.testSessionRepo.manager;
+
+    const { center, eligible } = await this.resolveEligibleCenter(
+      manager,
       testSessionId,
       energyCenter,
     );
 
-    const answered = await this.responseRepo.find({
-      where: { personalitySessionId: ps.id },
-    });
-
-    const answeredIds = answered.map((r) => r.questionId);
-
-    const qb = this.questionRepo
-      .createQueryBuilder('q')
-      .where('q.energy_center = :center', { center: energyCenter })
-      .orderBy('q.question_order', 'ASC');
-
-    if (answeredIds.length) {
-      qb.andWhere('q.id NOT IN (:...ids)', { ids: answeredIds });
+    // Read-only once Stage 2 is complete: never create a new center session.
+    if (await this.isStage2Completed(manager, testSessionId)) {
+      return this.completedCenterResponse(center);
     }
 
-    const question = await qb.getOne();
+    const existingPs = await this.personalitySessionRepo.findOne({
+      where: { testSessionId, energyCenter: center },
+    });
+
+    if (existingPs?.completedAt) {
+      return this.completedCenterResponse(center);
+    }
+
+    const currentCenter = await this.getCurrentCenter(
+      manager,
+      testSessionId,
+      eligible,
+    );
+
+    if (currentCenter !== center) {
+      throw new ConflictException('CENTER_OUT_OF_SEQUENCE');
+    }
+
+    const ps = await this.getOrCreatePersonalitySession(
+      testSessionId,
+      center,
+      manager,
+    );
+
+    const question = await this.findNextUnansweredQuestion(
+      manager,
+      ps.id,
+      center,
+    );
 
     if (!question) {
-      return {
-        completed: true,
-        stage: 'PERSONALITY',
-        energyCenter,
-        message: 'Personality assessment completed',
-      };
+      return this.completedCenterResponse(center);
     }
 
     const options = await this.rankRepo.find({
@@ -296,55 +434,136 @@ export class PersonalityService {
       throw new ForbiddenException(access.reason);
     }
 
-    const ps = await this.getOrCreatePersonalitySession(
-      testSessionId,
-      energyCenter,
-    );
+    return this.testSessionRepo.manager.transaction(async (manager) => {
+      await this.assertStage2NotCompleted(manager, testSessionId);
 
-    if (ps.completedAt) {
-      return {
-        completed: true,
-        message: 'Personality assessment already completed',
-      };
-    }
-
-    const existing = await this.responseRepo.findOne({
-      where: { personalitySessionId: ps.id, questionId },
-    });
-
-    if (existing) {
-      throw new BadRequestException('Question already answered');
-    }
-
-    await this.responseRepo.save({
-      personalitySessionId: ps.id,
-      questionId,
-      rankChoiceId,
-    });
-
-    const count = await this.responseRepo.count({
-      where: { personalitySessionId: ps.id },
-    });
-    const totalQuestions = await this.questionRepo.count({
-      where: {
+      const { center, eligible } = await this.resolveEligibleCenter(
+        manager,
+        testSessionId,
         energyCenter,
-      },
+      );
+
+      const psRepo = manager.getRepository(PersonalitySession);
+
+      const existingPs = await psRepo.findOne({
+        where: { testSessionId, energyCenter: center },
+      });
+
+      if (existingPs?.completedAt) {
+        return {
+          completed: true,
+          message: 'Personality assessment already completed',
+        };
+      }
+
+      const currentCenter = await this.getCurrentCenter(
+        manager,
+        testSessionId,
+        eligible,
+      );
+
+      if (currentCenter !== center) {
+        throw new ConflictException('CENTER_OUT_OF_SEQUENCE');
+      }
+
+      const { id: psId } = await this.getOrCreatePersonalitySession(
+        testSessionId,
+        center,
+        manager,
+      );
+
+      // Serialise answers for this center so the sequence check, the
+      // answer count and result calculation see a consistent state.
+      const ps = await psRepo.findOne({
+        where: { id: psId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!ps) throw new NotFoundException('Personality session not found');
+
+      if (ps.completedAt) {
+        return {
+          completed: true,
+          message: 'Personality assessment already completed',
+        };
+      }
+
+      const question = await manager
+        .getRepository(PersonalityQuestion)
+        .findOne({ where: { id: questionId } });
+
+      if (!question) {
+        throw new BadRequestException('QUESTION_NOT_FOUND');
+      }
+
+      if (question.energyCenter !== center) {
+        throw new BadRequestException('QUESTION_CENTER_MISMATCH');
+      }
+
+      const rankChoice = await manager
+        .getRepository(PersonalityRankChoice)
+        .findOne({ where: { id: rankChoiceId } });
+
+      if (!rankChoice) {
+        throw new BadRequestException('INVALID_RANK_CHOICE');
+      }
+
+      const responseRepo = manager.getRepository(PersonalityResponse);
+
+      const existing = await responseRepo.findOne({
+        where: { personalitySessionId: ps.id, questionId },
+      });
+
+      if (existing) {
+        throw new BadRequestException('Question already answered');
+      }
+
+      const nextQuestion = await this.findNextUnansweredQuestion(
+        manager,
+        ps.id,
+        center,
+      );
+
+      if (nextQuestion?.id !== question.id) {
+        throw new ConflictException('QUESTION_OUT_OF_SEQUENCE');
+      }
+
+      await responseRepo.save({
+        personalitySessionId: ps.id,
+        questionId,
+        rankChoiceId,
+      });
+
+      const count = await responseRepo.count({
+        where: { personalitySessionId: ps.id },
+      });
+      const totalQuestions = await manager
+        .getRepository(PersonalityQuestion)
+        .count({ where: { energyCenter: center } });
+
+      if (count >= totalQuestions) {
+        await this.calculateResult(ps.id, manager);
+        return {
+          completed: true,
+          message: 'Personality assessment completed',
+        };
+      }
+      return { answered: count };
     });
-    if (count >= totalQuestions) {
-      await this.calculateResult(ps.id);
-      return {
-        completed: true,
-        message: 'Personality assessment completed',
-      };
-    }
-    return { answered: count };
   }
 
   /* -----------------------------------------
      CALCULATE RESULT
   ------------------------------------------*/
-  async calculateResult(personalitySessionId: number) {
-    const session = await this.personalitySessionRepo.findOne({
+  // Runs inside the caller's transaction so the breakdown rows and the
+  // completion timestamp are written together.
+  async calculateResult(
+    personalitySessionId: number,
+    manager: EntityManager = this.testSessionRepo.manager,
+  ) {
+    const psRepo = manager.getRepository(PersonalitySession);
+
+    const session = await psRepo.findOne({
       where: { id: personalitySessionId },
     });
 
@@ -352,7 +571,8 @@ export class PersonalityService {
       throw new BadRequestException('Session already completed or not found');
     }
 
-    const rows: ScoreRow[] = await this.responseRepo
+    const rows: ScoreRow[] = await manager
+      .getRepository(PersonalityResponse)
       .createQueryBuilder('r')
       .innerJoin('personality_rank_choices', 'rc', 'rc.id = r.rank_choice_id')
       .innerJoin('personality_questions', 'q', 'q.id = r.question_id')
@@ -369,7 +589,7 @@ export class PersonalityService {
 
     if (!rows.length) throw new BadRequestException('No responses found');
 
-    await this.breakdownRepo.save(
+    await manager.getRepository(PersonalityResultBreakdown).save(
       rows.map((r) => ({
         personalitySessionId,
         personalityTypeId: Number(r.personalitytypeid),
@@ -377,7 +597,7 @@ export class PersonalityService {
       })),
     );
 
-    await this.personalitySessionRepo.update(personalitySessionId, {
+    await psRepo.update(personalitySessionId, {
       completedAt: new Date(),
     });
 
@@ -410,27 +630,18 @@ export class PersonalityService {
       if (!access.allowed) {
         throw new ForbiddenException(access.reason);
       }
-    const rows: EnergyCenterRow[] = await this.testSessionRepo.manager.query(
-      `
-        SELECT energy_center
-        FROM energy_result_eligible_centers
-        WHERE session_id = $1
-      `,
-      [testSessionId],
+
+    const manager = this.testSessionRepo.manager;
+
+    const eligibleCenters = await this.getEligibleCenters(
+      manager,
+      testSessionId,
     );
 
-    const eligibleCenters = rows.map((r) => r.energy_center);
-
-    const sessions = await this.personalitySessionRepo.find({
-      where: { testSessionId },
-    });
-
-    const completedCenters = sessions
-      .filter((s) => s.completedAt)
-      .map((s) => s.energyCenter);
-
-    const nextCenter = eligibleCenters.find(
-      (c) => !completedCenters.includes(c),
+    const nextCenter = await this.getCurrentCenter(
+      manager,
+      testSessionId,
+      eligibleCenters,
     );
 
     if (!nextCenter) return { completed: true };
@@ -441,6 +652,8 @@ export class PersonalityService {
   /* -----------------------------------------
      FINAL RESULT - legacy debug admin/test only endpoint - can be removed later
   ------------------------------------------*/
+  // Final results are written once. A repeated request returns the stored
+  // rows unchanged; the test session row lock serialises concurrent calls.
   async aggregateFinalPersonality(testSessionId: string,
     requesterId: number,
     requesterRole: string
@@ -454,56 +667,96 @@ export class PersonalityService {
     if (!access.allowed) {
       throw new ForbiddenException(access.reason);
     }
-    const sessions = await this.personalitySessionRepo.find({
-      where: {
+
+    return this.testSessionRepo.manager.transaction(async (manager) => {
+      const testSession = await manager.getRepository(TestSession).findOne({
+        where: { id: testSessionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!testSession) {
+        throw new NotFoundException('Session not found');
+      }
+
+      const finalRepo = manager.getRepository(FinalPersonalityResult);
+
+      const stored = await finalRepo.find({
+        where: { testSessionId },
+        order: { totalScore: 'DESC', personalityTypeId: 'ASC' },
+      });
+
+      if (stored.length) {
+        return stored.map((r) => ({
+          personalityTypeId: r.personalityTypeId,
+          totalScore: r.totalScore,
+        }));
+      }
+
+      // Marked complete but no stored results: never recalculate.
+      if (testSession.completedAt) {
+        throw new ConflictException('STAGE2_RESULTS_MISSING');
+      }
+
+      const sessions = await manager.getRepository(PersonalitySession).find({
+        where: {
+          testSessionId,
+          completedAt: Not(IsNull()),
+        },
+      });
+
+      if (!sessions.length) {
+        throw new NotFoundException('No completed personality assessments');
+      }
+
+      const eligibleCenters = await this.getEligibleCenters(
+        manager,
         testSessionId,
-        completedAt: Not(IsNull()),
-      },
+      );
+      const completedCenters = sessions.map((s) => s.energyCenter);
+
+      if (eligibleCenters.some((c) => !completedCenters.includes(c))) {
+        throw new ConflictException('STAGE2_NOT_COMPLETE');
+      }
+
+      const sessionIds = sessions.map((s) => s.id);
+
+      const rows: ScoreRow[] = await manager
+        .getRepository(PersonalityResultBreakdown)
+        .createQueryBuilder('b')
+        .select([
+          'b.personality_type_id AS personalitytypeid',
+          'SUM(b.score) AS totalscore',
+        ])
+        .where('b.personality_session_id IN (:...ids)', {
+          ids: sessionIds,
+        })
+        .groupBy('b.personality_type_id')
+        .orderBy('totalscore', 'DESC')
+        .getRawMany();
+
+      const results = rows.map((r) => ({
+        personalityTypeId: Number(r.personalitytypeid),
+        totalScore: Number(r.totalscore),
+      }));
+
+      const topScore = Math.max(...results.map((r) => r.totalScore));
+
+      await finalRepo.save(
+        results.map((r) => ({
+          testSessionId,
+          personalityTypeId: r.personalityTypeId,
+          totalScore: r.totalScore,
+          isDominant: r.totalScore === topScore,
+        })),
+      );
+
+      // ✅ mark full completion
+      await manager.getRepository(TestSession).update(testSessionId, {
+        completedAt: new Date(),
+      });
+
+      return results;
     });
-
-    if (!sessions.length) {
-      throw new NotFoundException('No completed personality assessments');
-    }
-
-    const sessionIds = sessions.map((s) => s.id);
-
-    const rows: ScoreRow[] = await this.breakdownRepo
-      .createQueryBuilder('b')
-      .select([
-        'b.personality_type_id AS personalitytypeid',
-        'SUM(b.score) AS totalscore',
-      ])
-      .where('b.personality_session_id IN (:...ids)', {
-        ids: sessionIds,
-      })
-      .groupBy('b.personality_type_id')
-      .orderBy('totalscore', 'DESC')
-      .getRawMany();
-
-    const results = rows.map((r) => ({
-      personalityTypeId: Number(r.personalitytypeid),
-      totalScore: Number(r.totalscore),
-    }));
-
-    const topScore = Math.max(...results.map((r) => r.totalScore));
-
-    await this.finalResultRepo.delete({ testSessionId });
-
-    await this.finalResultRepo.save(
-      results.map((r) => ({
-        testSessionId,
-        personalityTypeId: r.personalityTypeId,
-        totalScore: r.totalScore,
-        isDominant: r.totalScore === topScore,
-      })),
-    );
-
-    // ✅ mark full completion
-    await this.testSessionRepo.update(testSessionId, {
-      completedAt: new Date(),
-    });
-
-    return results;
   }
 
   /***********************

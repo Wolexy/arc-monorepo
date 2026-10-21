@@ -7,6 +7,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 
 import {
     getSavedEnergyResult,
+    markStage1ResultsViewed,
     type EnergyAssessmentResult,
 } from "@/lib/api/assessment";
 
@@ -97,6 +98,17 @@ export default function Stage1ResultsPage() {
                 }
 
                 setResult(savedResult);
+
+                // Record the first successful view. A failure here must not
+                // hide the results, so it is logged instead of shown.
+                if (!progress.stage1ResultsViewed) {
+                    markStage1ResultsViewed(session.id).catch((markError) => {
+                        console.error(
+                            "Unable to record Stage 1 results view:",
+                            markError,
+                        );
+                    });
+                }
             } catch (err) {
                 if (!isMounted) return;
 

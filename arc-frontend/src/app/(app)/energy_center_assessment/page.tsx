@@ -179,8 +179,8 @@ export default function AssessmentPage() {
                     await finishEnergyAssessment(currentSessionId);
                 }
 
-                // Stage 1 results have their own route.
-                router.replace('/stage1_results');
+                // Show the completion page before the Stage 1 results.
+                router.replace('/stage1_completed');
                 return;
             } finally {
                 setIsFinishing(false);

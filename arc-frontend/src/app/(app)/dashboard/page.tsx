@@ -18,6 +18,11 @@ export default function DashboardPage() {
     const [error, setError] = useState("");
     const [hasActiveSession, setHasActiveSession] = useState(false);
     const [stage1Completed, setStage1Completed] = useState(false);
+    const [stage1ResultsViewed, setStage1ResultsViewed] = useState(false);
+    // Stage 2 started: a personality session exists for this test session.
+    const [stage2Started, setStage2Started] = useState(false);
+    // Stage 2 completed: the test session has its completedAt set.
+    const [stage2Completed, setStage2Completed] = useState(false);
     const [isCheckingProgress, setIsCheckingProgress] = useState(false);
 
     
@@ -66,6 +71,9 @@ export default function DashboardPage() {
                 if (!isMounted) return;
 
                 setStage1Completed(progress.stage1Completed);
+                setStage1ResultsViewed(progress.stage1ResultsViewed);
+                setStage2Started(progress.stage2Started);
+                setStage2Completed(!!session.completedAt);
             } catch (progressError) {
                 if (!isMounted) return;
 
@@ -121,6 +129,75 @@ export default function DashboardPage() {
     // Stage 2 is enforced separately by the backend.
     const canAccessAssessment = user.emailVerified && user.accountEnabled;
     const hasStage2Access = user.role === "ADMIN" || user.stage2AccessGranted;
+
+    // Primary assessment action, derived from backend progress. The Stage 2
+    // pages re-check access with the backend before anything is created.
+    const nextStep: {
+        message: string;
+        href: string;
+        label: string;
+        showResultsLink: boolean;
+    } = isCheckingProgress
+        ? {
+              message: "Checking your assessment progress...",
+              href: "/assessment",
+              label: "View Assessment",
+              showResultsLink: false,
+          }
+        : !hasActiveSession
+          ? {
+                message: "You're ready to begin your Energy Center Assessment.",
+                href: "/assessment",
+                label: "Begin Assessment",
+                showResultsLink: false,
+            }
+          : !stage1Completed
+            ? {
+                  message:
+                      "You have an Energy Center Assessment in progress. Continue where you left off.",
+                  href: "/energy_center_assessment",
+                  label: "Continue Assessment",
+                  showResultsLink: false,
+              }
+            : stage2Completed
+              ? {
+                    message:
+                        "You have completed both stages of the ARC assessment. Your results are saved.",
+                    href: "/personality_results",
+                    label: "View Personality Results",
+                    showResultsLink: true,
+                }
+              : stage2Started
+                ? {
+                      message:
+                          "Your Personality Assessment is in progress. Continue where you left off.",
+                      href: "/personality_assessment",
+                      label: "Continue Personality Assessment",
+                      showResultsLink: true,
+                  }
+                : !stage1ResultsViewed
+                  ? {
+                        message:
+                            "You've completed the Energy Center Assessment. See your next steps.",
+                        href: "/stage1_completed",
+                        label: "View Your Next Steps",
+                        showResultsLink: true,
+                    }
+                  : hasStage2Access
+                    ? {
+                          message:
+                              "Your Energy Center results are ready. You can now begin the Personality Assessment.",
+                          href: "/personality_assessment",
+                          label: "Begin Personality Assessment",
+                          showResultsLink: true,
+                      }
+                    : {
+                          message:
+                              "Your Energy Center results are ready. See your Personality Assessment status on your next-steps page.",
+                          href: "/stage1_completed",
+                          label: "View Your Next Steps",
+                          showResultsLink: true,
+                      };
 
     return (
         <main className="min-h-screen px-6 py-10">
@@ -190,33 +267,26 @@ export default function DashboardPage() {
                         {canAccessAssessment ? (
                             <div className="mt-6">
                                 <p className="text-gray-600">
-                                    {isCheckingProgress
-                                        ? "Checking your assessment progress..."
-                                        : stage1Completed
-                                            ? "Your Energy Center Assessment is complete. Your results are ready to view."
-                                            : hasActiveSession
-                                                ? "You have an Energy Center Assessment in progress. Continue where you left off."
-                                                : "You're ready to begin your Energy Center Assessment."}
+                                    {nextStep.message}
                                 </p>
 
-                                <Link
-                                    href={
-                                        stage1Completed
-                                            ? "/stage1_results"
-                                            : hasActiveSession
-                                                ? "/energy_center_assessment"
-                                                : "/assessment"
-                                    }
-                                    className="mt-4 inline-block rounded-lg bg-black px-5 py-3 font-medium text-white hover:opacity-90"
-                                >
-                                    {isCheckingProgress
-                                        ? "View Assessment"
-                                        : stage1Completed
-                                            ? "View Energy Center Results"
-                                            : hasActiveSession
-                                                ? "Continue Assessment"
-                                                : "Begin Assessment"}
-                                </Link>
+                                <div className="mt-4 flex flex-wrap items-center gap-4">
+                                    <Link
+                                        href={nextStep.href}
+                                        className="inline-block rounded-lg bg-black px-5 py-3 font-medium text-white hover:opacity-90"
+                                    >
+                                        {nextStep.label}
+                                    </Link>
+
+                                    {nextStep.showResultsLink && (
+                                        <Link
+                                            href="/stage1_results"
+                                            className="text-sm font-medium text-gray-700 underline-offset-4 hover:underline"
+                                        >
+                                            View Energy Center Results
+                                        </Link>
+                                    )}
+                                </div>
                             </div>
                         ) : (
                             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">

@@ -3,6 +3,8 @@ import {
   Post,
   Body,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Req,
   UseGuards,
@@ -37,6 +39,20 @@ export class SessionsController {
       req.user.role,
     );
     return this.sessionsService.getProgress(sessionId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('stage1-results-viewed/:sessionId')
+  @HttpCode(HttpStatus.OK)
+  markStage1ResultsViewed(
+    @Param('sessionId') sessionId: string,
+    @Req() req: AuthRequest,
+  ) {
+    return this.sessionsService.markStage1ResultsViewed(
+      sessionId,
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

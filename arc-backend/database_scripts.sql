@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS public.test_sessions
     completed_at timestamp without time zone,
     stage2_unlocked_at timestamp without time zone,
     stage1_completed_at timestamp without time zone,
+    stage1_results_viewed_at timestamp without time zone,
     CONSTRAINT test_sessions_pkey PRIMARY KEY (id)
 );
 

@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TestSession } from './entities/test-session.entity';
@@ -82,6 +87,7 @@ tell an in-progress session from a completed one.
       return {
         sessionId,
         stage1Completed: false,
+        stage1ResultsViewed: false,
         stage2Started: false,
         accessGranted: false,
         eligibleCenters: [],
@@ -132,9 +138,54 @@ tell an in-progress session from a completed one.
     return {
       sessionId,
       stage1Completed: !!session.stage1CompletedAt,
+      stage1ResultsViewed: !!session.stage1ResultsViewedAt,
       stage2Started,
       accessGranted,
       eligibleCenters,
+    };
+  }
+
+  /********************************************
+Record the first time the owner viewed their saved Stage 1 results.
+The timestamp comes from the database clock and is never overwritten.
+ ----------------------------------------------*/
+  async markStage1ResultsViewed(
+    sessionId: string,
+    userId: number,
+    role: string,
+  ) {
+    const session = await this.validateSessionOwnership(
+      sessionId,
+      userId,
+      role,
+    );
+
+    // An admin viewing another user's session must not mark it viewed.
+    if (session.userId !== userId) {
+      throw new ForbiddenException(
+        'Only the session owner can record viewing these results',
+      );
+    }
+
+    if (!session.stage1CompletedAt) {
+      throw new BadRequestException('Stage 1 has not been completed');
+    }
+
+    await this.sessionRepo
+      .createQueryBuilder()
+      .update(TestSession)
+      .set({ stage1ResultsViewedAt: () => 'now()' })
+      .where('id = :sessionId', { sessionId })
+      .andWhere('stage1_results_viewed_at IS NULL')
+      .execute();
+
+    const updated = await this.sessionRepo.findOneOrFail({
+      where: { id: sessionId },
+    });
+
+    return {
+      sessionId,
+      stage1ResultsViewedAt: updated.stage1ResultsViewedAt,
     };
   }
   //Helper function to validate user's role
