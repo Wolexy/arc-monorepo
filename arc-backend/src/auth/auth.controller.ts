@@ -80,6 +80,7 @@ export class AuthController {
   /* ---------------------------
      EMAIL VERIFICATION
   ----------------------------*/
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Get('verify-email')
   verifyEmail(@Query('token') token: string) {
     return this.auth.verifyEmail(token);

@@ -12,6 +12,7 @@ import { AdminModule } from './admin/admin.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { buildThrottlerOptions } from './common/throttle.config';
 
 @Module({
   imports: [
@@ -19,12 +20,10 @@ import { ThrottlerGuard } from '@nestjs/throttler';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60_000,
-        limit: process.env.NODE_ENV === 'production' ? 10 : 100,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: buildThrottlerOptions,
+    }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
